@@ -1,8 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+import { generateMedia } from '@/lib/api';
 
 type MediaType = 'image' | 'video' | 'music' | 'tts' | '3d' | 'meme';
 
@@ -57,12 +56,7 @@ export default function SimulatorPage() {
           break;
       }
 
-      const r = await fetch(`${API}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await r.json();
+      const data = await generateMedia(endpoint, body);
       setResult(data);
     } catch (err: any) {
       setResult({ error: err.message });

@@ -1,77 +1,27 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
-
-interface PipelineJob {
-  job_id: string;
-  job_code?: string;
-  channel_id?: number;
-  content_type?: string;
-  topic?: string;
-  status: string;
-  current_step?: string;
-  stage?: number;
-  progress_pct?: number;
-  updated_at?: number;
-}
+import { listPipelines, approvePipeline, runPipeline, type PipelineJob } from '@/lib/api';
 
 export default function PipelinePage() {
   const [jobs, setJobs] = useState<PipelineJob[]>([]);
   const [channelFilter, setChannelFilter] = useState('');
-  const [selectedJob, setSelectedJob] = useState<PipelineJob | null>(null);
-  const [brief, setBrief] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
   const fetchJobs = useCallback(async () => {
-    const params = new URLSearchParams();
-    if (channelFilter) params.set('channel_id', channelFilter);
-    const r = await fetch(`${API}/api/pipeline/list`);
-    if (r.ok) {
-      const data = await r.json();
-      setJobs(Array.isArray(data) ? data : data.pipelines || []);
-    }
+    try { setJobs(await listPipelines()); } catch {}
   }, [channelFilter]);
 
   useEffect(() => { fetchJobs(); }, [fetchJobs]);
 
-  const handleCreatePipeline = async (channelId: string, topic: string) => {
-    setLoading(true);
-    try {
-      const r = await fetch(`${API}/api/pipeline/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channel_id: channelId, topic }),
-      });
-      if (r.ok) fetchJobs();
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleApprove = async (pipelineId: string) => {
     setLoading(true);
-    try {
-      await fetch(`${API}/api/pipeline/${pipelineId}/approve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ approved: true }),
-      });
-      fetchJobs();
-    } finally {
-      setLoading(false);
-    }
+    try { await approvePipeline(pipelineId); fetchJobs(); } finally { setLoading(false); }
   };
 
   const handleRun = async (pipelineId: string) => {
     setLoading(true);
-    try {
-      await fetch(`${API}/api/pipeline/${pipelineId}/run`, { method: 'POST' });
-      fetchJobs();
-    } finally {
-      setLoading(false);
-    }
+    try { await runPipeline(pipelineId); fetchJobs(); } finally { setLoading(false); }
   };
 
   return (

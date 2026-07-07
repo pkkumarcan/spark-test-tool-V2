@@ -1,15 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
-
-interface Asset {
-  name: string;
-  path: string;
-  type: string;
-  url: string;
-}
+import { fetchAssets, type Asset } from '@/lib/api';
 
 export default function PreviewPage() {
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -17,9 +9,7 @@ export default function PreviewPage() {
   const [selected, setSelected] = useState<Asset | null>(null);
 
   useEffect(() => {
-    fetch(`${API}/api/assets`)
-      .then(r => r.json())
-      .then(data => setAssets(Array.isArray(data) ? data : []));
+    fetchAssets().then(setAssets).catch(() => {});
   }, []);
 
   const filtered = filter === 'all' ? assets : assets.filter(a => a.type === filter);
@@ -93,17 +83,17 @@ export default function PreviewPage() {
               <button onClick={() => setSelected(null)} className="text-[#7a7a8e] hover:text-white">✕</button>
             </div>
             {selected.type === 'image' && (
-              <img src={`${API}${selected.url}`} alt={selected.name} className="w-full rounded-lg" />
+              <img src={selected.url} alt={selected.name} className="w-full rounded-lg" />
             )}
             {selected.type === 'video' && (
-              <video src={`${API}${selected.url}`} controls className="w-full rounded-lg" />
+              <video src={selected.url} controls className="w-full rounded-lg" />
             )}
             {selected.type === 'audio' && (
-              <audio src={`${API}${selected.url}`} controls className="w-full" />
+              <audio src={selected.url} controls className="w-full" />
             )}
             {selected.type === 'doc' && (
               <div className="bg-[#0f0f14] rounded-lg p-4 text-sm">
-                <a href={`${API}${selected.url}`} className="text-[#00e5ff] underline">{selected.name}</a>
+                <a href={selected.url} className="text-[#00e5ff] underline">{selected.name}</a>
               </div>
             )}
           </div>

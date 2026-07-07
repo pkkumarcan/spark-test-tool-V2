@@ -1,26 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
-
-interface GPUInfo {
-  index: number;
-  name: string;
-  vram_used_mb: number;
-  vram_total_mb: number;
-  utilization_pct: number;
-  temperature_c: number;
-  power_w: number;
-}
+import { fetchHealth, fetchGpuStatus, type GPUInfo } from '@/lib/api';
 
 export default function DashboardPage() {
   const [health, setHealth] = useState<Record<string, string>>({});
   const [gpus, setGpus] = useState<Record<string, GPUInfo>>({});
 
   useEffect(() => {
-    fetch(`${API}/health`).then(r => r.json()).then(d => setHealth(d.services || {}));
-    fetch(`${API}/api/gpu/status`).then(r => r.json()).then(d => setGpus(d.gpus || {}));
+    fetchHealth().then(d => setHealth(d.services || {})).catch(() => {});
+    fetchGpuStatus().then(d => setGpus(d)).catch(() => {});
   }, []);
 
   const navItems = [

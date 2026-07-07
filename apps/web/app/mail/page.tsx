@@ -1,46 +1,28 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
-
-interface Email {
-  id: string;
-  subject: string;
-  from: string;
-  date: string;
-  snippet: string;
-}
+import { fetchEmails, fetchMailStats, startMailSync, type Email } from '@/lib/api';
 
 export default function MailPage() {
   const [emails, setEmails] = useState<Email[]>([]);
   const [syncing, setSyncing] = useState(false);
-  const [stats, setStats] = useState<any>({});
+  const [stats, setStats] = useState<Record<string, unknown>>({});
 
-  const fetchEmails = async () => {
-    try {
-      const r = await fetch(`${API}/api/mail/emails`);
-      if (r.ok) {
-        const data = await r.json();
-        setEmails(data.emails || data || []);
-      }
-    } catch {}
+  const loadEmails = async () => {
+    try { setEmails(await fetchEmails()); } catch {}
   };
 
-  const fetchStats = async () => {
-    try {
-      const r = await fetch(`${API}/api/mail/stats`);
-      if (r.ok) setStats(await r.json());
-    } catch {}
+  const loadStats = async () => {
+    try { setStats(await fetchMailStats()); } catch {}
   };
 
-  useEffect(() => { fetchEmails(); fetchStats(); }, []);
+  useEffect(() => { loadEmails(); loadStats(); }, []);
 
-  const startSync = async () => {
+  const handleSync = async () => {
     setSyncing(true);
     try {
-      await fetch(`${API}/api/mail/sync/start`, { method: 'POST' });
-      setTimeout(() => { fetchEmails(); fetchStats(); setSyncing(false); }, 5000);
+      await startMailSync();
+      setTimeout(() => { loadEmails(); loadStats(); setSyncing(false); }, 5000);
     } catch { setSyncing(false); }
   };
 
@@ -52,7 +34,7 @@ export default function MailPage() {
           <p className="text-[#7a7a8e] text-sm mt-1">AI-powered email organization</p>
         </div>
         <button
-          onClick={startSync}
+          onClick={handleSync}
           disabled={syncing}
           className="bg-[#00e5ff] text-black px-4 py-2 rounded-lg text-sm font-medium hover:brightness-110 disabled:opacity-40"
         >

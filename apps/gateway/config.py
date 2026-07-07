@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     # Security
     api_key: str = ""
-    cors_origins: list[str] = ["http://localhost:3000"]
+    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:3002"]
     max_body_size: int = 10 * 1024 * 1024  # 10MB
 
     # Observability

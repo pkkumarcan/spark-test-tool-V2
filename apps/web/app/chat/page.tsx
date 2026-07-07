@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+import { chat } from '@/lib/api';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -27,12 +26,7 @@ export default function ChatPage() {
     setLoading(true);
 
     try {
-      const r = await fetch(`${API}/api/text/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMsg }),
-      });
-      const data = await r.json();
+      const data = await chat(userMsg);
       setMessages((prev) => [...prev, { role: 'assistant', content: data.response || 'No response' }]);
     } catch (err: any) {
       setMessages((prev) => [...prev, { role: 'assistant', content: `Error: ${err.message}` }]);

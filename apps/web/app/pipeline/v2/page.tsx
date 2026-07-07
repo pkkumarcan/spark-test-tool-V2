@@ -1,41 +1,22 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
-
-interface PipelineV2 {
-  pipeline_id: string;
-  channel_id: string;
-  topic: string;
-  stage: string;
-  status: string;
-  progress_pct: number;
-  created_at: string;
-}
+import { listPipelines, createPipeline, type PipelineJob } from '@/lib/api';
 
 export default function PipelineV2Page() {
-  const [pipelines, setPipelines] = useState<PipelineV2[]>([]);
+  const [pipelines, setPipelines] = useState<PipelineJob[]>([]);
   const [channelId, setChannelId] = useState('MLN');
   const [topic, setTopic] = useState('');
 
   const fetchPipelines = async () => {
-    const r = await fetch(`${API}/api/pipeline/list`);
-    if (r.ok) {
-      const data = await r.json();
-      setPipelines(Array.isArray(data) ? data : data.pipelines || []);
-    }
+    try { setPipelines(await listPipelines()); } catch {}
   };
 
   useEffect(() => { fetchPipelines(); }, []);
 
   const handleCreate = async () => {
     if (!topic.trim()) return;
-    await fetch(`${API}/api/pipeline/create`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ channel_id: channelId, topic: topic.trim() }),
-    });
+    await createPipeline(channelId, topic.trim());
     setTopic('');
     fetchPipelines();
   };

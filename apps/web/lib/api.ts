@@ -1,7 +1,3 @@
-/**
- * API client for Spark V2 backend.
- */
-
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? '';
 
 export async function apiFetch<T = unknown>(
@@ -16,6 +12,40 @@ export async function apiFetch<T = unknown>(
     throw new Error(`API error: ${resp.status} ${resp.statusText}`);
   }
   return resp.json() as Promise<T>;
+}
+
+// Health & GPU
+
+export interface HealthResponse {
+  services: Record<string, string>;
+}
+
+export interface GPUInfo {
+  index: number;
+  name: string;
+  vram_used_mb: number;
+  vram_total_mb: number;
+  utilization_pct: number;
+  temperature_c: number;
+  power_w: number;
+}
+
+export async function fetchHealth(): Promise<HealthResponse> {
+  return apiFetch<HealthResponse>('/health');
+}
+
+export async function fetchGpuStatus(): Promise<Record<string, GPUInfo>> {
+  const data = await apiFetch<{ gpus: Record<string, GPUInfo> }>('/api/gpu/status');
+  return data.gpus || {};
+}
+
+// IDE
+
+export interface FileEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
+  children?: FileEntry[];
 }
 
 export async function readFile(path: string): Promise<string> {
@@ -38,6 +68,8 @@ export async function listFiles(): Promise<FileEntry[]> {
   );
   return data.files;
 }
+
+// Agent
 
 export async function sendAgentMessage(
   task: string,
@@ -68,9 +100,98 @@ export async function rejectTool(
   });
 }
 
-interface FileEntry {
+// Chat
+
+export async function chat(message: string): Promise<{ response: string }> {
+  return apiFetch('/api/text/chat', {
+    method: 'POST',
+    body: JSON.stringify({ message }),
+  });
+}
+
+// Mail
+
+export interface Email {
+  id: string;
+  subject: string;
+  from: string;
+  date: string;
+  snippet: string;
+}
+
+export async function fetchEmails(): Promise<Email[]> {
+  const data = await apiFetch<{ emails: Email[] }>('/api/mail/emails');
+  return data.emails || [];
+}
+
+export async function fetchMailStats(): Promise<Record<string, unknown>> {
+  return apiFetch('/api/mail/stats');
+}
+
+export async function startMailSync(): Promise<void> {
+  await apiFetch('/api/mail/sync/start', { method: 'POST' });
+}
+
+// Pipeline
+
+export interface PipelineJob {
+  job_id: string;
+  job_code?: string;
+  channel_id?: number;
+  content_type?: string;
+  topic?: string;
+  status: string;
+  current_step?: string;
+  stage?: number;
+  progress_pct?: number;
+  updated_at?: number;
+}
+
+export async function listPipelines(): Promise<PipelineJob[]> {
+  const data = await apiFetch<{ pipelines: PipelineJob[] } | PipelineJob[]>('/api/pipeline/list');
+  return Array.isArray(data) ? data : data.pipelines || [];
+}
+
+export async function createPipeline(channelId: string, topic: string): Promise<void> {
+  await apiFetch('/api/pipeline/create', {
+    method: 'POST',
+    body: JSON.stringify({ channel_id: channelId, topic }),
+  });
+}
+
+export async function approvePipeline(pipelineId: string): Promise<void> {
+  await apiFetch(`/api/pipeline/${pipelineId}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ approved: true }),
+  });
+}
+
+export async function runPipeline(pipelineId: string): Promise<void> {
+  await apiFetch(`/api/pipeline/${pipelineId}/run`, { method: 'POST' });
+}
+
+// Assets
+
+export interface Asset {
   name: string;
   path: string;
-  isDir: boolean;
-  children?: FileEntry[];
+  type: string;
+  url: string;
+}
+
+export async function fetchAssets(): Promise<Asset[]> {
+  const data = await apiFetch<Asset[] | { assets: Asset[] }>('/api/assets');
+  return Array.isArray(data) ? data : [];
+}
+
+// Media generation
+
+export async function generateMedia(
+  endpoint: string,
+  body: Record<string, string>,
+): Promise<unknown> {
+  return apiFetch(endpoint, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
 }
