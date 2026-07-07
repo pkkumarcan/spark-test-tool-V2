@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import httpx
 import logging
 import os
 import subprocess
 from datetime import UTC, datetime
 
+import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
@@ -31,7 +31,7 @@ async def health():
         _check("ollama", f"{settings.ollama_base_url}/api/tags"),
         _check("comfyui", f"{settings.comfyui_url}/"),
     )
-    
+
     services = {"gateway": "online"} | dict(results)
     return {
         "status": "ok",
@@ -74,13 +74,15 @@ async def gpu_status():
 
     try:
         import httpx
-        async with httpx.AsyncClient() as client:
-            r = await client.get("http://10.0.0.162:8000/api/gpu/status", timeout=0.8)
-            if r.status_code == 200:
-                remote_data = r.json()
-                for r_key, r_gpu in remote_data.get("gpus", {}).items():
-                    r_gpu["name"] = f"Node B: {r_gpu.get('name', 'GPU')}"
-                    gpus[f"node_b_{r_key}"] = r_gpu
+        node_b_url = os.getenv("SPARK_NODE_B_URL", "")
+        if node_b_url:
+            async with httpx.AsyncClient() as client:
+                r = await client.get(f"{node_b_url}/api/gpu/status", timeout=0.8)
+                if r.status_code == 200:
+                    remote_data = r.json()
+                    for r_key, r_gpu in remote_data.get("gpus", {}).items():
+                        r_gpu["name"] = f"Node B: {r_gpu.get('name', 'GPU')}"
+                        gpus[f"node_b_{r_key}"] = r_gpu
     except Exception:
         pass
 

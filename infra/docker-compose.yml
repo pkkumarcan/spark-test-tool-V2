@@ -27,7 +27,7 @@ services:
     environment:
       SPARK_POSTGRES_URL: postgresql://spark:spark@postgres:5432/spark
       SPARK_OLLAMA_BASE_URL: http://host.docker.internal:11434
-      SPARK_COMFYUI_URL: http://10.0.0.162:8188
+      SPARK_COMFYUI_URL: http://host.docker.internal:8188
       SPARK_CORS_ORIGINS: '["http://localhost:3002", "http://localhost:3000"]'
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -35,7 +35,7 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - /home/pkkumar/AGGY/spark-test-tool-V2:/app
+      - ../:/app
     working_dir: /app
 
   web:
@@ -79,8 +79,8 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - /home/pkkumar/AGGY/spark-test-tool-V2:/app
-      - /home/pkkumar/AGGY/spark-test-tool/output:/comfyui-output
+      - ../:/app
+      - ../output:/comfyui-output
     working_dir: /app
     deploy:
       resources:

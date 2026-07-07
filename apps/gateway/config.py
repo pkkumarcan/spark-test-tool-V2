@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     # ComfyUI
     comfyui_url: str = "http://localhost:8188"
 
+    # Remote GPU nodes (optional)
+    node_b_url: str = ""
+
     # Security
     api_key: str = ""
     cors_origins: list[str] = ["http://localhost:3000"]

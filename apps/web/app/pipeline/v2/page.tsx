@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
 interface PipelineV2 {
   pipeline_id: string;

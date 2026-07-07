@@ -22,7 +22,7 @@ export function FileTree({ onSelect }: FileTreeProps) {
       const resp = await fetch('/api/ide/files');
       const data = await resp.json();
       if (data.status === 'ok') {
-        setTree(data.tree || []);
+        setTree(data.files || []);
       }
     } catch {
       setTree([]);

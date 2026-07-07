@@ -18,8 +18,8 @@ docker compose up -d
 ```
 
 **Services:**
-- **Web UI**: http://localhost:3000
-- **API Gateway**: http://localhost:8000
+- **Web UI**: http://localhost:3002
+- **API Gateway**: http://localhost:8080
 - **PostgreSQL**: localhost:5432
 
 ## Architecture
@@ -27,7 +27,7 @@ docker compose up -d
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
 │   Next.js Web   │────▶│   FastAPI Gateway │────▶│   PostgreSQL    │
-│   (port 3000)   │     │   (port 8000)     │     │   (port 5432)   │
+│   (port 3002)   │     │   (port 8080)     │     │   (port 5432)   │
 └─────────────────┘     └──────────────────┘     └─────────────────┘
                               │                          ▲
                               ▼                          │
@@ -103,7 +103,7 @@ SPARK_COMFYUI_URL=http://host.docker.internal:8188
 
 # Security
 SPARK_API_KEY=your-api-key
-SPARK_CORS_ORIGINS=["http://localhost:3000"]
+SPARK_CORS_ORIGINS=["http://localhost:3002", "http://localhost:3000"]
 ```
 
 ## Development
@@ -114,7 +114,7 @@ cd apps/gateway
 pip install -e .
 uvicorn apps.gateway.main:app --reload --port 8000
 
-# Frontend
+# Frontend (runs on http://localhost:3002)
 cd apps/web
 npm install
 npm run dev

@@ -33,10 +33,10 @@ export async function writeFile(path: string, content: string): Promise<void> {
 }
 
 export async function listFiles(): Promise<FileEntry[]> {
-  const data = await apiFetch<{ status: string; tree: FileEntry[] }>(
+  const data = await apiFetch<{ status: string; files: FileEntry[] }>(
     '/api/ide/files',
   );
-  return data.tree;
+  return data.files;
 }
 
 export async function sendAgentMessage(
@@ -44,25 +44,27 @@ export async function sendAgentMessage(
   model: string,
   sessionId: string,
 ): Promise<Response> {
-  return fetch(
-    `${BASE_URL}/api/ide/stream?task=${encodeURIComponent(task)}&model=${encodeURIComponent(model)}&session_id=${sessionId}`,
-  );
+  return fetch(`${BASE_URL}/api/orchestrator/code/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ task, model, session_id: sessionId }),
+  });
 }
 
-export async function approveTool(sessionId: string): Promise<void> {
-  await apiFetch('/api/ide/approve', {
+export async function approveTool(toolCallId: string): Promise<void> {
+  await apiFetch('/api/orchestrator/code/approve', {
     method: 'POST',
-    body: JSON.stringify({ session_id: sessionId }),
+    body: JSON.stringify({ tool_call_id: toolCallId }),
   });
 }
 
 export async function rejectTool(
-  sessionId: string,
+  toolCallId: string,
   feedback: string,
 ): Promise<void> {
-  await apiFetch('/api/ide/reject', {
+  await apiFetch('/api/orchestrator/code/reject', {
     method: 'POST',
-    body: JSON.stringify({ session_id: sessionId, feedback }),
+    body: JSON.stringify({ tool_call_id: toolCallId, feedback }),
   });
 }
 
