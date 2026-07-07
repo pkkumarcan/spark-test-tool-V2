@@ -1,0 +1,108 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: spark
+      POSTGRES_PASSWORD: spark
+      POSTGRES_DB: spark
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spark -d spark"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.gateway
+    ports:
+      - "8080:8000"
+    environment:
+      SPARK_POSTGRES_URL: postgresql://spark:spark@postgres:5432/spark
+      SPARK_OLLAMA_BASE_URL: http://host.docker.internal:11434
+      SPARK_COMFYUI_URL: http://10.0.0.162:8188
+      SPARK_CORS_ORIGINS: '["http://localhost:3002", "http://localhost:3000"]'
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - /home/pkkumar/AGGY/spark-test-tool-V2:/app
+    working_dir: /app
+
+  web:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.web
+    ports:
+      - "3002:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+    depends_on:
+      - gateway
+
+  whisper:
+    image: rhasspy/wyoming-whisper:latest
+    ports:
+      - "10300:10300"
+    command: --model small --language en
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  media-workers:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.media-workers
+    environment:
+      SPARK_POSTGRES_HOST: postgres
+      SPARK_POSTGRES_PORT: "5432"
+      SPARK_POSTGRES_USER: spark
+      SPARK_POSTGRES_PASSWORD: spark
+      SPARK_POSTGRES_DB: spark
+      SPARK_COMFYUI_URL: http://host.docker.internal:8188
+      GPU_NODE_NAME: gpu-node-1
+      OUTPUT_DIR: /comfyui-output
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - /home/pkkumar/AGGY/spark-test-tool-V2:/app
+      - /home/pkkumar/AGGY/spark-test-tool/output:/comfyui-output
+    working_dir: /app
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  f5-tts:
+    image: chenxwh/f5-tts:latest
+    ports:
+      - "9880:9880"
+    volumes:
+      - ../model-cache:/root/.cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  pgdata:

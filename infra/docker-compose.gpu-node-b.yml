@@ -1,0 +1,17 @@
+version: "3.9"
+
+# Second GPU node — extends the main docker-compose.yml
+# Usage: docker compose -f docker-compose.yml -f docker-compose.gpu-node-b.yml up -d media-workers
+
+services:
+  media-workers:
+    environment:
+      GPU_NODE_NAME: gpu-node-2
+      SPARK_COMFYUI_URL: http://host.docker.internal:8188
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

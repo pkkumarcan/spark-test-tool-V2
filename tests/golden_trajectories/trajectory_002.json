@@ -1,0 +1,31 @@
+{
+  "id": "trajectory_002",
+  "description": "Web search for information, respond with chat summary",
+  "prompt": "What are the latest developments in quantum computing?",
+  "model": "qwen3:8b",
+  "created_at": "2025-01-15T11:00:00Z",
+  "expected_tool_calls": [
+    {
+      "tool": "web_search",
+      "args": {"query": "latest developments quantum computing 2025", "max_results": 5},
+      "description": "Search the web for current quantum computing news"
+    },
+    {
+      "tool": "done",
+      "args": {"summary": "Recent quantum computing developments include advances in error correction, larger qubit counts from IBM and Google, and growing commercial applications in drug discovery and cryptography."},
+      "description": "Provide a summary of findings"
+    }
+  ],
+  "expected_states": [
+    "planning",
+    "tool_call",
+    "sandbox_exec",
+    "verify",
+    "planning",
+    "tool_call",
+    "sandbox_exec",
+    "verify",
+    "done"
+  ],
+  "tags": ["web_search", "chat_response", "research"]
+}
