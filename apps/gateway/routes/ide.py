@@ -37,6 +37,7 @@ async def list_files():
                         "name": entry.name,
                         "path": rel_path,
                         "type": "directory",
+                        "isDir": True,
                         "children": build_tree(entry.path),
                     })
                 else:
@@ -44,6 +45,7 @@ async def list_files():
                         "name": entry.name,
                         "path": rel_path,
                         "type": "file",
+                        "isDir": False,
                     })
         except PermissionError:
             pass
@@ -111,6 +113,34 @@ async def write_file(req: WriteFileRequest):
         return {"status": "ok", "message": f"Written {len(req.content)} bytes to {path}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to write file: {e}")
+
+
+class DeleteFileRequest(BaseModel):
+    path: str
+
+
+@router.delete("/file")
+async def delete_file(req: DeleteFileRequest):
+    """Delete a file or directory."""
+    path = req.path.strip()
+    if not path:
+        raise HTTPException(status_code=400, detail="Path is required")
+    if not _is_safe_path(path):
+        raise HTTPException(status_code=403, detail="Access denied. Path lies outside sandbox.")
+
+    abs_path = os.path.realpath(os.path.join(WORKSPACE_ROOT, path))
+    if not os.path.exists(abs_path):
+        raise HTTPException(status_code=404, detail="File not found")
+
+    try:
+        if os.path.isdir(abs_path):
+            import shutil
+            shutil.rmtree(abs_path)
+        else:
+            os.remove(abs_path)
+        return {"status": "ok", "message": f"Deleted {path}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete: {e}")
 
 
 class SetWorkspaceRequest(BaseModel):

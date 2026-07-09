@@ -15,7 +15,12 @@
     "postcss": "^8.5.16",
     "react": "latest",
     "react-dom": "latest",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1",
+    "html2canvas": "^1.4.1",
     "tailwindcss": "^4.3.2",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "zustand": "^5.0.14"
   }
 }

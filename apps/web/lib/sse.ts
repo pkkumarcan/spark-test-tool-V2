@@ -1,37 +1,69 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
+import { useSessionStore } from './stores/session';
+import { gatewayUrl } from './api';
 import type { AgentEvent } from './types';
 
 interface UseAgentSEReturn {
   events: AgentEvent[];
-  send: (message: string) => void;
+  send: (sessionId: string, message: string, images?: string[]) => void;
+  stopSession: (sessionId: string) => void;
   approve: (toolCallId: string) => void;
   reject: (toolCallId: string, feedback: string) => void;
   isGenerating: boolean;
   error: string | null;
 }
 
-export function useAgentSSE(endpoint: string): UseAgentSEReturn {
-  const [events, setEvents] = useState<AgentEvent[]>([]);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
+export function useAgentSSE(
+  endpoint: string,
+  sessionId?: string,
+): UseAgentSEReturn {
+  const activeSessionId = useSessionStore((s) => s.activeSessionId);
+  const appendEvent = useSessionStore((s) => s.appendEvent);
+  const setGenerating = useSessionStore((s) => s.setGenerating);
+  const setError = useSessionStore((s) => s.setError);
+  const sessions = useSessionStore((s) => s.sessions);
+
+  const currentSessionId = sessionId ?? activeSessionId;
+  const session = currentSessionId ? sessions.get(currentSessionId) : undefined;
+  const events = session?.events ?? [];
+  const isGenerating = session?.isGenerating ?? false;
+  const error = session?.error ?? null;
+
+  const controllersRef = useRef<Map<string, AbortController>>(new Map());
+
+  const stopSession = useCallback(
+    (sessionId: string) => {
+      const controller = controllersRef.current.get(sessionId);
+      if (controller) {
+        controller.abort();
+        controllersRef.current.delete(sessionId);
+      }
+      setGenerating(sessionId, false);
+    },
+    [setGenerating],
+  );
 
   const send = useCallback(
-    (message: string) => {
-      abortRef.current?.abort();
-      setEvents([]);
-      setError(null);
-      setIsGenerating(true);
+    (sessionId: string, message: string, images?: string[]) => {
+      const existing = controllersRef.current.get(sessionId);
+      if (existing) {
+        existing.abort();
+      }
 
       const controller = new AbortController();
-      abortRef.current = controller;
+      controllersRef.current.set(sessionId, controller);
 
-      fetch(endpoint, {
+      setGenerating(sessionId, true);
+      setError(sessionId, null);
+
+      const url = gatewayUrl(endpoint);
+
+      fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task: message }),
+        body: JSON.stringify({ task: message, session_id: sessionId, images }),
         signal: controller.signal,
       })
         .then((resp) => {
@@ -43,7 +75,8 @@ export function useAgentSSE(endpoint: string): UseAgentSEReturn {
           const processStream = (): Promise<void> =>
             reader.read().then(({ done, value }) => {
               if (done) {
-                setIsGenerating(false);
+                controllersRef.current.delete(sessionId);
+                setGenerating(sessionId, false);
                 return;
               }
 
@@ -63,7 +96,7 @@ export function useAgentSSE(endpoint: string): UseAgentSEReturn {
                 try {
                   const parsed = JSON.parse(dataStr) as AgentEvent;
                   parsed.type = parsed.type || eventType;
-                  setEvents((prev) => [...prev, parsed]);
+                  appendEvent(sessionId, parsed);
                 } catch {
                   // skip malformed events
                 }
@@ -75,17 +108,18 @@ export function useAgentSSE(endpoint: string): UseAgentSEReturn {
           return processStream();
         })
         .catch((err) => {
+          controllersRef.current.delete(sessionId);
           if (err.name !== 'AbortError') {
-            setError(err.message);
-            setIsGenerating(false);
+            setError(sessionId, err.message);
+            setGenerating(sessionId, false);
           }
         });
     },
-    [endpoint],
+    [endpoint, appendEvent, setGenerating, setError],
   );
 
   const approve = useCallback(async (toolCallId: string) => {
-    await fetch('/api/orchestrator/code/approve', {
+    await fetch(gatewayUrl('/api/orchestrator/code/approve'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tool_call_id: toolCallId }),
@@ -93,7 +127,7 @@ export function useAgentSSE(endpoint: string): UseAgentSEReturn {
   }, []);
 
   const reject = useCallback(async (toolCallId: string, feedback: string) => {
-    await fetch('/api/orchestrator/code/reject', {
+    await fetch(gatewayUrl('/api/orchestrator/code/reject'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tool_call_id: toolCallId, feedback }),
@@ -101,8 +135,11 @@ export function useAgentSSE(endpoint: string): UseAgentSEReturn {
   }, []);
 
   useEffect(() => {
-    return () => abortRef.current?.abort();
+    return () => {
+      controllersRef.current.forEach((c) => c.abort());
+      controllersRef.current.clear();
+    };
   }, []);
 
-  return { events, send, approve, reject, isGenerating, error };
+  return { events, send, stopSession, approve, reject, isGenerating, error };
 }

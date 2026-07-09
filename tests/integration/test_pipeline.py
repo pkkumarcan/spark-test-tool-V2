@@ -44,11 +44,37 @@ class TestPipelineState:
         state = PipelineState("p1", "ch1", "topic1")
         d = state.to_dict()
         assert d["pipeline_id"] == "p1"
+        assert d["job_id"] == "p1"
+        assert d["job_code"] == "p1"
         assert d["channel_id"] == "ch1"
         assert d["topic"] == "topic1"
+        assert d["status"] == "pending"
+        assert d["current_step"] == "topic: Waiting to start"
+        assert d["progress_pct"] == 0
         assert d["stage"] == "topic"
         assert "stages" in d
         assert "data" in d
+
+    def test_to_dict_running_stage(self):
+        state = PipelineState("p1", "ch1", "topic1")
+        state.set_stage(PipelineStage.SCRIPT, "running", 50, "Generating...")
+        d = state.to_dict()
+        assert d["status"] == "running"
+        assert "script" in d["current_step"]
+        assert d["progress_pct"] > 0
+
+    def test_to_dict_failed_stage(self):
+        state = PipelineState("p1", "ch1", "topic1")
+        state.set_stage(PipelineStage.FAILED, "failed", 0, "Failed: test error")
+        d = state.to_dict()
+        assert d["status"] == "failed"
+
+    def test_to_dict_completed_stage(self):
+        state = PipelineState("p1", "ch1", "topic1")
+        state.set_stage(PipelineStage.COMPLETED, "passed", 100, "Done")
+        d = state.to_dict()
+        assert d["status"] == "completed"
+        assert d["progress_pct"] == 100
 
     def test_to_dict_has_timestamps(self):
         state = PipelineState("p1", "ch1", "topic1")
@@ -85,7 +111,10 @@ class TestPipelineFunctions:
         for p in pipelines:
             assert isinstance(p, dict)
             assert "pipeline_id" in p
-            assert "stage" in p
+            assert "job_id" in p
+            assert "status" in p
+            assert "progress_pct" in p
+            assert "current_step" in p
 
 
 class TestPipelineStageOrder:

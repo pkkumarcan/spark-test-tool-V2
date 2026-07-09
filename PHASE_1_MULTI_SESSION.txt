@@ -1,0 +1,29 @@
+PROJECT: /home/pkkumar/AGGY/spark-test-tool-V2/apps/web
+TASK: Build multi-session support with tab bar and session manager sidebar.
+
+REQUIRES: Phase 0 (Zustand stores must exist at lib/stores/)
+
+CONTEXT:
+- Session store at lib/stores/session.ts manages sessions Map and activeSessionId
+- Each session has events[], status ('active'|'completed'|'failed'), task description
+- useAgentSSE in lib/sse.ts is session-scoped after Phase 0
+
+FILES TO CREATE/MODIFY:
+1. New: components/SessionManager.tsx — sidebar panel listing all sessions
+   - Each session shows: truncated task, status badge (colored dot), event count
+   - Click to switch active session
+   - "+" button to create new session (prompts for task, starts new SSE stream)
+   - Kill/stop button per session
+2. Modify: app/ide/page.tsx
+   - Add session tabs above editor (like VS Code tabs)
+   - Each tab = session name + close button
+   - Active tab highlights with accent color
+   - Sidebar switches between FileTree and SessionManager based on uiStore.sidebarTab
+3. Modify: lib/sse.ts
+   - Add stopSession() that aborts the controller
+   - Ensure multiple concurrent SSE streams can run independently
+
+CONSTRAINTS:
+- Each session gets its own AbortController — stopping one doesn't affect others.
+- Do NOT change the backend. Frontend-only changes.
+- Verify: `npm run build` must pass.

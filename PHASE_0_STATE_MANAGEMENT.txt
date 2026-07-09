@@ -1,0 +1,33 @@
+PROJECT: /home/pkkumar/AGGY/spark-test-tool-V2/apps/web
+TASK: Add Zustand state management and refactor SSE hook to be session-scoped.
+
+CONTEXT:
+- This is a Next.js 16 app with Tailwind v4, TypeScript, no existing state store.
+- The SSE hook at lib/sse.ts sends POST to http://localhost:8080/api/orchestrator/code/stream
+- Backend already supports session_id (UUID) per request — frontend ignores it.
+- Current components: MonacoEditor.tsx, FileTree.tsx, Terminal.tsx, ApprovalCard.tsx, DiffViewer.tsx
+
+FILES TO MODIFY/CREATE:
+1. Install zustand: `npm install zustand`
+2. Create lib/stores/session.ts — SessionStore with:
+   - sessions: Map<sessionId, { id, events: AgentEvent[], status, task, model }>
+   - activeSessionId: string | null
+   - createSession(), setActiveSession(), appendEvent(), clearSession()
+3. Create lib/stores/workspace.ts — WorkspaceStore:
+   - workspaceRoot: string, fileTree: FileEntry[], selectedFile: string | null
+   - setWorkspace(), setFileTree(), setSelectedFile()
+4. Create lib/stores/ui.ts — UIStore:
+   - sidebarTab: 'explorer' | 'sessions' | 'tasks', terminalOpen: boolean
+   - toggleTerminal(), setSidebarTab()
+5. Refactor lib/sse.ts:
+   - useAgentSSE now accepts sessionId param
+   - On send(), registers new session in store
+   - Appends events to that session's event array
+   - Keep the fetch to NEXT_PUBLIC_API_URL + endpoint pattern
+6. Refactor app/ide/page.tsx to read from stores instead of local state
+
+CONSTRAINTS:
+- Do NOT change any component visual rendering — pure state plumbing.
+- Do NOT add comments. Follow existing code style.
+- Verify: `npm run build` must pass with zero errors.
+- The gateway at http://localhost:8080 must remain reachable (CORS is configured).

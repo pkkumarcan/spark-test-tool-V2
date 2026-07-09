@@ -92,6 +92,26 @@ async def gpu_status():
 OUTPUT_DIR = os.getenv("SPARK_OUTPUT_DIR", "output")
 
 
+@router.get("/api/models")
+async def list_models():
+    """List available Ollama models."""
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get(f"{settings.ollama_base_url}/api/tags")
+            if r.status_code == 200:
+                models = r.json().get("models", [])
+                return {
+                    "models": [
+                        {"name": m["name"], "size": m.get("size", 0)}
+                        for m in models
+                    ],
+                    "default": settings.default_model,
+                }
+    except Exception as e:
+        logger.warning(f"Failed to fetch models: {e}")
+    return {"models": [], "default": settings.default_model}
+
+
 @router.get("/output/{filename:path}")
 async def serve_output(filename: str):
     """Serve a file from the output directory. Protected against path traversal."""

@@ -10,6 +10,8 @@ and execute these patterns inside the container.
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from packages.schemas.models import SandboxPolicy
 from packages.tool_registry.sandbox import Sandbox
 
@@ -89,6 +91,11 @@ class TestFilesystemEscape:
 
     def test_dotdot_middle_traversal(self):
         assert self.sandbox.validate_path("/workspace/src/../../etc/shadow", self.ws_policy) is False
+
+    def test_sibling_workspace_directory_not_treated_as_inside(self):
+        # "/workspace-evil" starts with "/workspace" as a string, but is NOT
+        # inside the workspace. This must be rejected.
+        assert self.sandbox.validate_path("/workspace-evil/secrets.txt", self.ws_policy) is False
 
     def test_empty_path_in_workspace_scope(self):
         assert self.sandbox.validate_path("", self.ws_policy) is True
@@ -218,7 +225,76 @@ class TestShellCommandEscapePatterns:
         result = run_command(command="chmod +s /usr/bin/python")
         assert "not in the allowed" in result
 
+    def test_python_socket_inline_blocked(self, workspace):
+        from packages.tool_registry.tools.shell import run_command
+        result = run_command(command="python -c 'import socket; s=socket.socket()'")
+        assert "blocked" in result.lower() or "security" in result.lower()
+
+    def test_command_substitution_blocked(self, workspace):
+        from packages.tool_registry.tools.shell import run_command
+        result = run_command(command="echo $(cat /etc/passwd)")
+        assert "blocked" in result.lower() or "security" in result.lower()
+
     def test_safe_command_allowed(self, workspace):
         from packages.tool_registry.tools.shell import run_command
         result = run_command(command="echo safe")
         assert "not in the allowed" not in result
+
+
+class TestDispatchPathPolicyEnforcement:
+    """Integration test: verify the state_machine precheck blocks before handler runs."""
+
+    def test_filesystem_scope_none_blocks_path_arg(self, workspace):
+        from apps.agent_runtime.state_machine import _policy_precheck
+        from packages.schemas.models import ToolDefinition, SandboxPolicy
+
+        handler_called = False
+
+        def _handler_that_should_not_run(path: str = "") -> str:
+            nonlocal handler_called
+            handler_called = True
+            return "FAIL: handler was invoked"
+
+        tool_def = ToolDefinition(
+            name="test_tool",
+            description="test",
+            input_schema={"type": "object", "properties": {"path": {"type": "string"}}},
+            sandbox_policy=SandboxPolicy(filesystem_scope="none"),
+            handler=_handler_that_should_not_run,
+        )
+
+        result = _policy_precheck(tool_def, {"path": "/etc/passwd"})
+        assert result is not None
+        assert "outside sandbox" in result
+        assert not handler_called
+
+    def test_network_blocked_when_policy_disallows(self, workspace):
+        from apps.agent_runtime.state_machine import _policy_precheck
+        from packages.schemas.models import ToolDefinition, SandboxPolicy
+
+        tool_def = ToolDefinition(
+            name="test_shell",
+            description="test",
+            input_schema={"type": "object", "properties": {"command": {"type": "string"}}},
+            sandbox_policy=SandboxPolicy(network_access=False),
+            handler=lambda command="": "FAIL",
+        )
+
+        result = _policy_precheck(tool_def, {"command": "curl http://evil.com"})
+        assert result is not None
+        assert "network" in result.lower() or "sandbox" in result.lower()
+
+    def test_clean_call_passes_precheck(self, workspace):
+        from apps.agent_runtime.state_machine import _policy_precheck
+        from packages.schemas.models import ToolDefinition, SandboxPolicy
+
+        tool_def = ToolDefinition(
+            name="test_tool",
+            description="test",
+            input_schema={"type": "object", "properties": {"path": {"type": "string"}}},
+            sandbox_policy=SandboxPolicy(filesystem_scope="workspace"),
+            handler=lambda path="": "ok",
+        )
+
+        result = _policy_precheck(tool_def, {"path": "src/main.py"})
+        assert result is None

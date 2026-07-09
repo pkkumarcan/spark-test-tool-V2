@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import logging
 import time
 from collections import defaultdict
@@ -16,17 +17,23 @@ _HEALTH_PATHS = {"/health", "/docs", "/openapi.json"}
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    """Simple in-memory token bucket rate limiter."""
+    """Simple in-memory token bucket rate limiter.
 
-    def __init__(self, app, requests_per_minute: int = 100):
+    # TODO(scale): For multi-replica deployments, move _buckets to Redis
+    # (INCR + EXPIRE per client per window) or Postgres.
+    """
+
+    def __init__(self, app, requests_per_minute: int = 100, trust_proxy_headers: bool = False):
         super().__init__(app)
         self.rpm = requests_per_minute
+        self.trust_proxy_headers = trust_proxy_headers
         self._buckets: dict[str, list[float]] = defaultdict(list)
 
     def _client_ip(self, request: Request) -> str:
-        forwarded = request.headers.get("x-forwarded-for")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
+        if self.trust_proxy_headers:
+            forwarded = request.headers.get("x-forwarded-for")
+            if forwarded:
+                return forwarded.split(",")[0].strip()
         return request.client.host if request.client else "unknown"
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
@@ -69,7 +76,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         key = request.headers.get("x-api-key", "")
-        if key != self.api_key:
+        if not hmac.compare_digest(key, self.api_key):
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Invalid or missing API key."},

@@ -1,5 +1,12 @@
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? '';
 
+export function gatewayUrl(path: string): string {
+  if (typeof window !== 'undefined') {
+    return `${window.location.protocol}//${window.location.hostname}:8080${path}`;
+  }
+  return `${BASE_URL}${path}`;
+}
+
 export async function apiFetch<T = unknown>(
   path: string,
   options?: RequestInit,
@@ -69,17 +76,30 @@ export async function listFiles(): Promise<FileEntry[]> {
   return data.files;
 }
 
+// Models
+
+export interface ModelInfo {
+  name: string;
+  size: number;
+}
+
+export async function fetchModels(): Promise<{ models: ModelInfo[]; default: string }> {
+  const data = await apiFetch<{ models: ModelInfo[]; default: string }>('/api/models');
+  return data;
+}
+
 // Agent
 
 export async function sendAgentMessage(
   task: string,
   model: string,
   sessionId: string,
+  images?: string[],
 ): Promise<Response> {
   return fetch(`${BASE_URL}/api/orchestrator/code/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ task, model, session_id: sessionId }),
+    body: JSON.stringify({ task, model, session_id: sessionId, images }),
   });
 }
 
@@ -137,14 +157,14 @@ export async function startMailSync(): Promise<void> {
 export interface PipelineJob {
   job_id: string;
   job_code?: string;
-  channel_id?: number;
+  channel_id?: string;
   content_type?: string;
   topic?: string;
   status: string;
   current_step?: string;
-  stage?: number;
+  stage?: string;
   progress_pct?: number;
-  updated_at?: number;
+  updated_at?: string;
 }
 
 export async function listPipelines(): Promise<PipelineJob[]> {
@@ -152,8 +172,8 @@ export async function listPipelines(): Promise<PipelineJob[]> {
   return Array.isArray(data) ? data : data.pipelines || [];
 }
 
-export async function createPipeline(channelId: string, topic: string): Promise<void> {
-  await apiFetch('/api/pipeline/create', {
+export async function createPipeline(channelId: string, topic: string): Promise<PipelineJob> {
+  return apiFetch<PipelineJob>('/api/pipeline/create', {
     method: 'POST',
     body: JSON.stringify({ channel_id: channelId, topic }),
   });

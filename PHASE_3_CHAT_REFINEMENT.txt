@@ -1,0 +1,34 @@
+PROJECT: /home/pkkumar/AGGY/spark-test-tool-V2/apps/web
+TASK: Upgrade chat panel with markdown, code highlighting, and action buttons.
+
+DEPENDENCIES: npm install react-markdown rehype-highlight remark-gfm
+
+CONTEXT:
+- Chat messages are rendered in app/ide/page.tsx lines 123-166
+- Events with type='text' contain agent responses (plain text currently)
+- Events with type='tool_call' show tool_name and tool_args as raw JSON
+- The dark theme uses: bg #0f0f14, panels #1a1a22, borders #2a2a36, accent #00e5ff
+
+FILES TO CREATE/MODIFY:
+1. New: components/ChatMessage.tsx
+   - Accepts AgentEvent, renders based on type
+   - type='text': render content as Markdown using react-markdown + rehype-highlight
+   - type='tool_call': collapsible block with tool name badge + formatted args
+   - type='tool_result': monospace block with syntax-aware truncation
+   - type='error': red-bordered error card
+   - Distinguish "thinking" (tool calls in progress) from "final response" (text)
+2. Modify: app/ide/page.tsx
+   - Replace inline event rendering with ChatMessage components
+   - Add action buttons in chat input area:
+     - Stop button (visible when isGenerating, calls abortRef.current?.abort())
+     - Copy last response button
+   - Auto-scroll to bottom on new messages
+3. Add CSS for code blocks in globals.css:
+   - .prose-invert for markdown container
+   - Code block styling matching dark theme
+
+CONSTRAINTS:
+- All code blocks get a copy-to-clipboard button.
+- Language badge in top-right of code blocks.
+- Do NOT add comments. Keep existing component structure.
+- Verify: `npm run build` must pass.

@@ -1,0 +1,33 @@
+PROJECT: /home/pkkumar/AGGY/spark-test-tool-V2/apps/web
+TASK: Build structured task pipeline visualization from raw SSE events.
+
+REQUIRES: Phase 0 (stores must exist)
+
+CONTEXT:
+- SSE events have these types: state_change, tool_call, tool_result, text, error,
+  awaiting_file_write, awaiting_command_run, done
+- state_change events include a state field: planning, tool_call, sandbox_exec,
+  verify, approval_pending, apply, done, failed
+- Each session in the store has an events[] array of AgentEvent objects
+- Types defined in lib/types.ts (AgentEvent interface)
+
+FILES TO CREATE:
+1. New: components/TaskPipeline.tsx
+   - Visual timeline showing agent phases as connected nodes:
+     Planning → Tool Call → Execute → Verify → Done
+   - Current phase highlighted with pulse animation
+   - Completed phases show green check, failed show red X
+   - Each phase node expands to show nested events
+2. New: components/ToolCallBlock.tsx
+   - Collapsible block for tool_call events
+   - Shows: tool name (monospace, colored), args as formatted JSON
+   - Expands to show tool_result (with truncation at 500 chars)
+   - For awaiting_file_write/awaiting_command_run: show ApprovalCard (already exists)
+3. Modify: app/ide/page.tsx
+   - Add TaskPipeline to the right panel or as a toggleable sidebar tab
+   - Wire to active session's events from store
+
+CONSTRAINTS:
+- Reuse existing ApprovalCard.tsx component for pending approvals.
+- Do NOT add comments. Match existing dark theme colors (#0f0f14, #1a1a22, #2a2a36, #00e5ff).
+- Verify: `npm run build` must pass.

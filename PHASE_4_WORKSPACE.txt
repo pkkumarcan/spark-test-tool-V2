@@ -1,0 +1,31 @@
+PROJECT: /home/pkkumar/AGGY/spark-test-tool-V2/apps/web
+TASK: Add workspace selection modal and file CRUD in explorer.
+
+CONTEXT:
+- Backend has: GET /api/ide/workspace, POST /api/ide/workspace (set root)
+- Backend has: GET /api/ide/files (tree), GET /api/ide/file?path=, POST /api/ide/file
+- FileTree.tsx currently only lists files (read-only)
+- WorkspaceStore from Phase 0 holds workspaceRoot and fileTree
+
+FILES TO CREATE/MODIFY:
+1. New: components/WorkspaceModal.tsx
+   - Modal that appears on first load (or when clicking workspace name in sidebar)
+   - Input field for workspace path
+   - Calls POST /api/ide/workspace to set root
+   - Calls GET /api/ide/files to refresh tree
+   - Stores selection in WorkspaceStore + localStorage for persistence
+2. Modify: components/FileTree.tsx
+   - Add right-click context menu: New File, New Folder, Delete
+   - New File/Folder: inline input for name, POST /api/ide/file to create
+   - Delete: confirmation dialog, then DELETE endpoint (may need to add backend route)
+   - Active file indicator: pulsing dot next to file being modified by agent
+   - Read active modifications from session store events (tool_call with write_file/edit_file)
+3. Modify: app/ide/page.tsx
+   - Show workspace name/path in sidebar header (clickable → opens WorkspaceModal)
+   - On first load, check localStorage for saved workspace, else show modal
+
+CONSTRAINTS:
+- File CRUD needs a backend DELETE endpoint — check if it exists, if not add to
+  apps/gateway/routes/ide.py (simple: os.remove + safety check).
+- Do NOT add comments. Match existing styling.
+- Verify: `npm run build` must pass.

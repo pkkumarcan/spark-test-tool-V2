@@ -28,7 +28,10 @@ services:
       SPARK_POSTGRES_URL: postgresql://spark:spark@postgres:5432/spark
       SPARK_OLLAMA_BASE_URL: http://host.docker.internal:11434
       SPARK_COMFYUI_URL: http://host.docker.internal:8188
-      SPARK_CORS_ORIGINS: '["http://localhost:3002", "http://localhost:3000"]'
+      SPARK_CORS_ORIGINS: '["*"]'
+      WORKSPACE_ROOT: /home/pkkumar/AGGY/spark-test-tool
+      SPARK_WORKSPACE_ROOT: /home/pkkumar/AGGY/spark-test-tool
+      SPARK_DEBUG: "true"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -36,6 +39,7 @@ services:
         condition: service_healthy
     volumes:
       - ../:/app
+      - /home/pkkumar:/home/pkkumar
     working_dir: /app
 
   web:
@@ -48,6 +52,7 @@ services:
       - "3002:3000"
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8080
+      SPARK_GATEWAY_URL: http://gateway:8000
     depends_on:
       - gateway
 
@@ -93,7 +98,7 @@ services:
               capabilities: [gpu]
 
   f5-tts:
-    image: chenxwh/f5-tts:latest
+    image: climatologist/f5-tts:latest
     ports:
       - "9880:9880"
     volumes:

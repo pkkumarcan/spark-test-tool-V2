@@ -17,11 +17,26 @@ from apps.agent_runtime.context import compress_messages
 from apps.agent_runtime.llm_client import LLMClient
 from packages.schemas.models import AgentEvent, AgentState
 from packages.tool_registry import get_all_tools, get_tool
+from packages.tool_registry.sandbox import Sandbox
 
 logger = logging.getLogger(__name__)
 
 STUCK_LOOP_THRESHOLD = 3
 MAX_TOOL_OUTPUT = 4000
+
+_sandbox = Sandbox(workspace_root=os.getenv("WORKSPACE_ROOT", "/workspace"))
+
+
+def _policy_precheck(tool_def, tool_args: dict) -> str | None:
+    """Return an error string if the call should be blocked, else None."""
+    policy = tool_def.sandbox_policy
+    if "path" in tool_args and policy.filesystem_scope != "":
+        if not _sandbox.validate_path(str(tool_args["path"]), policy):
+            return "Permission denied. Target path lies outside sandbox."
+    if "command" in tool_args and not policy.network_access:
+        if not _sandbox.validate_command(str(tool_args["command"]), policy):
+            return "Permission denied. Command requires network access, which this sandbox policy disallows."
+    return None
 
 
 def _sse(event: AgentEvent) -> str:
@@ -38,6 +53,7 @@ class AgentStateMachine:
         database_url: str,
         max_iterations: int = 15,
         rag_context: str = "",
+        images: list[str] | None = None,
     ):
         self.session_id = session_id
         self.task = task
@@ -46,6 +62,7 @@ class AgentStateMachine:
         self.db_url = database_url
         self.max_iterations = max_iterations
         self.rag_context = rag_context
+        self.images = images or []
 
         self.state = AgentState.PLANNING
         self.messages: list[dict] = []
@@ -61,10 +78,37 @@ class AgentStateMachine:
         tool_schemas = self._build_tool_schemas(tools)
 
         system_prompt = self._build_system_prompt(tools)
+
+        # Auto-switch to vision model when images are attached
+        if self.images:
+            vision_models = ["llama3.2-vision:11b", "llava", "minicpm-v"]
+            current_is_vision = any(vm in self.model.lower() for vm in ["llava", "llama3.2-vision", "minicpm-v", "gemma4"])
+            if not current_is_vision:
+                # Try to find a vision model
+                for vm in vision_models:
+                    if vm in self.model or "vision" in vm:
+                        self.model = vm
+                        break
+                else:
+                    # Default to llama3.2-vision if available
+                    self.model = "llama3.2-vision:11b"
+                yield _sse(AgentEvent(type="state_change", state=AgentState.PLANNING, content=f"Switched to vision model: {self.model}"))
+
+        # Build user message with optional images
+        user_msg: dict = {"role": "user", "content": self.task}
+        if self.images:
+            user_msg["images"] = self.images
+
         self.messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": self.task},
+            user_msg,
         ]
+
+        # Emit user message event so frontend can display it
+        user_event = AgentEvent(type="user_message", content=self.task)
+        if self.images:
+            user_event.content = f"{self.task}\n\n[{len(self.images)} image(s) attached]"
+        yield _sse(user_event)
 
         yield _sse(AgentEvent(type="state_change", state=AgentState.PLANNING, content="Starting agent loop"))
 
@@ -110,8 +154,13 @@ class AgentStateMachine:
             )
         except Exception as e:
             logger.error(f"LLM call failed: {e}")
+            error_msg = str(e)
+            # If it's a 400 error, the model likely doesn't support the request
+            if "400" in error_msg or "Bad Request" in error_msg:
+                yield _sse(AgentEvent(type="error", error=f"Model '{self.model}' returned an error. Try a different model (e.g., llama3.2-vision:11b for images). Error: {error_msg}", state=AgentState.FAILED))
+            else:
+                yield _sse(AgentEvent(type="error", error=str(e), state=AgentState.FAILED))
             self.state = AgentState.FAILED
-            yield _sse(AgentEvent(type="error", error=str(e), state=AgentState.FAILED))
             return
 
         if response.tool_calls:
@@ -126,6 +175,9 @@ class AgentStateMachine:
             if response.content:
                 yield _sse(AgentEvent(type="text", content=response.content))
                 self.messages.append({"role": "assistant", "content": response.content})
+            else:
+                # Empty response — model didn't produce anything
+                yield _sse(AgentEvent(type="text", content="I didn't generate a response. The model may not support this request."))
             self.state = AgentState.DONE
 
     async def _parse_tool(self) -> AsyncGenerator[str, None]:
@@ -173,8 +225,8 @@ class AgentStateMachine:
             self.recent_tool_calls.pop(0)
         if len(self.recent_tool_calls) == 3 and len(set(self.recent_tool_calls)) == 1:
             self.consecutive_errors += 1
-            if self.consecutive_errors >= STUCK_LOOP_THRESHOLD:
-                yield _sse(AgentEvent(type="error", error=f"Stuck loop: repeated {tool_name} {self.consecutive_errors} times"))
+            if self.consecutive_errors >= 2:
+                yield _sse(AgentEvent(type="error", error=f"Stuck loop: repeated '{tool_name}' {self.consecutive_errors} times. Stopping to prevent infinite loop."))
                 self.state = AgentState.FAILED
                 return
             self.messages.append({
@@ -190,6 +242,13 @@ class AgentStateMachine:
             self.tool_result = f"Tool '{tool_name}' has no handler"
             self.state = AgentState.VERIFY
             yield _sse(AgentEvent(type="tool_result", tool_name=tool_name, tool_result=self.tool_result))
+            return
+
+        policy_violation = _policy_precheck(tool_def, tool_args)
+        if policy_violation:
+            self.tool_result = f"Tool error: {policy_violation}"
+            yield _sse(AgentEvent(type="tool_result", tool_name=tool_name, tool_result=self.tool_result))
+            self.state = AgentState.VERIFY
             return
 
         try:
@@ -390,6 +449,11 @@ class AgentStateMachine:
             self.tool_result = f"Tool '{tool_name}' has no handler"
             return
 
+        policy_violation = _policy_precheck(tool_def, tool_args)
+        if policy_violation:
+            self.tool_result = f"Tool error: {policy_violation}"
+            return
+
         try:
             result = tool_def.handler(**tool_args)
             if hasattr(result, '__await__'):
@@ -411,14 +475,15 @@ class AgentStateMachine:
         tools_section = "\n".join(tool_descs) if tool_descs else "No tools available."
 
         prompt = (
-            "You are Spark Agent, an autonomous AI assistant.\n"
-            "Your goal is to help the user by using available tools or answering directly.\n\n"
+            "You are Spark Agent, an autonomous AI coding assistant.\n"
+            "Your goal is to help the user with coding, file operations, shell commands, and technical questions.\n\n"
             "=== AVAILABLE TOOLS ===\n"
             f"{tools_section}\n\n"
-            "RULES:\n"
-            "- Use a tool when the user's request matches a tool's capability.\n"
-            "- When the task is complete, call the `done` tool with a summary.\n"
-            "- For general questions, respond directly without using tools.\n"
+            "CRITICAL RULES:\n"
+            "- For greetings, small talk, or general questions, respond DIRECTLY with text. Do NOT use tools.\n"
+            "- Only use tools when the user explicitly asks for a file operation, code task, or shell command.\n"
+            "- NEVER call hello_world or done for simple greetings.\n"
+            "- When a coding task is complete, call the `done` tool with a summary.\n"
             "- Be concise and helpful.\n"
         )
 

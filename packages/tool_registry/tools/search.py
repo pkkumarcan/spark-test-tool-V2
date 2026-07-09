@@ -6,18 +6,18 @@ import re
 
 from packages.schemas.models import SandboxPolicy
 from packages.tool_registry import tool
+from packages.tool_registry.paths import is_within_root, resolve_in_root
 
 _MAX_SEARCH_RESULTS = 50
 _WORKSPACE_ROOT = os.getenv("WORKSPACE_ROOT", "/workspace")
 
 
 def _safe_path(path: str) -> bool:
-    abs_path = os.path.realpath(os.path.join(_WORKSPACE_ROOT, path))
-    return abs_path.startswith(os.path.realpath(_WORKSPACE_ROOT))
+    return is_within_root(path, _WORKSPACE_ROOT)
 
 
 def _abs(path: str) -> str:
-    return os.path.realpath(os.path.join(_WORKSPACE_ROOT, path))
+    return resolve_in_root(path, _WORKSPACE_ROOT)
 
 
 @tool(

@@ -54,11 +54,11 @@ export default function PipelineV2Page() {
 
       <div className="space-y-3">
         {pipelines.map((p) => (
-          <div key={p.pipeline_id} className="bg-[#1a1a22] border border-[#2a2a36] rounded-xl p-4 flex items-center justify-between">
+          <div key={p.job_id} className="bg-[#1a1a22] border border-[#2a2a36] rounded-xl p-4 flex items-center justify-between">
             <div>
-              <div className="font-mono text-xs text-[#7a7a8e]">{p.pipeline_id.slice(0, 8)}</div>
+              <div className="font-mono text-xs text-[#7a7a8e]">{(p.job_code || p.job_id).slice(0, 8)}</div>
               <div className="text-sm mt-1">{p.topic || 'No topic'}</div>
-              <div className="text-xs text-[#7a7a8e] mt-1">Channel: {p.channel_id} | Stage: {p.stage}</div>
+              <div className="text-xs text-[#7a7a8e] mt-1">Channel: {p.channel_id || '-'} | Step: {p.current_step || '-'}</div>
             </div>
             <div className="flex items-center gap-3">
               <div className="w-24 h-1.5 bg-[#2a2a36] rounded-full overflow-hidden">

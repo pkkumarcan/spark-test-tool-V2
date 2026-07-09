@@ -34,7 +34,34 @@ class DeleteSourceRequest(BaseModel):
 
 @router.get("/sources")
 async def list_sources():
-    return {"sources": []}
+    try:
+        import httpx
+        from apps.agent_runtime.rag import QDRANT_URL, COLLECTION_NAME
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(
+                f"{QDRANT_URL}/collections/{COLLECTION_NAME}/points/scroll",
+                params={"limit": 100, "with_payload": True, "with_vector": False},
+            )
+            if r.status_code != 200:
+                return {"sources": []}
+            result = r.json().get("result", {})
+            points = result.get("points", [])
+            sources_map: dict[str, dict] = {}
+            for pt in points:
+                payload = pt.get("payload", {})
+                src = payload.get("source_file", payload.get("source", "unknown"))
+                if src not in sources_map:
+                    sources_map[src] = {
+                        "id": src,
+                        "name": src.split("/")[-1],
+                        "chunks": 0,
+                        "sample": payload.get("text", "")[:200],
+                    }
+                sources_map[src]["chunks"] += 1
+            return {"sources": list(sources_map.values())}
+    except Exception as e:
+        logger.warning(f"Failed to list RAG sources: {e}")
+        return {"sources": []}
 
 
 @router.post("/ingest")

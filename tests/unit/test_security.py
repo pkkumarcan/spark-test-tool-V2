@@ -65,7 +65,15 @@ class TestAllowedCommands:
         assert "git" in ALLOWED_COMMANDS
 
     def test_docker_in_allowed(self):
-        assert "docker" in ALLOWED_COMMANDS
+        assert "docker" not in ALLOWED_COMMANDS
+
+    def test_docker_compose_not_in_allowed(self):
+        assert "docker-compose" not in ALLOWED_COMMANDS
+
+    def test_docker_run_privileged_rejected(self, workspace):
+        from packages.tool_registry.tools.shell import run_command
+        result = run_command(command="docker run --privileged -v /:/host alpine")
+        assert "not in the allowed" in result
 
     def test_ls_in_allowed(self):
         assert "ls" in ALLOWED_COMMANDS
@@ -100,7 +108,7 @@ class TestBlockedPatterns:
     def test_force_rm_blocked(self, workspace):
         from packages.tool_registry.tools.shell import run_command
         result = run_command(command="docker image rm --force-rm myimage")
-        assert "dangerous" in result.lower() or "blocked" in result.lower()
+        assert "dangerous" in result.lower() or "blocked" in result.lower() or "not in the allowed" in result.lower()
 
 
 class TestPathTraversal:

@@ -1,0 +1,47 @@
+# Phase 6: Chat UX Overhaul + RAG Management Panel
+
+## T1: Compact Chat Panel (Right Sidebar)
+- **Status**: PENDING
+- **Issue**: Chat bubbles have excessive padding/margins, wasting vertical space
+- **Files**: `apps/web/components/ChatMessage.tsx`, `apps/web/app/ide/page.tsx`
+- **Changes**:
+  - Reduce message padding from `p-3` to `p-2`
+  - Reduce gap between messages from `space-y-4` to `space-y-1.5`
+  - Reduce label margins from `mb-2` to `mb-1`
+  - Tighten line height from `leading-relaxed` to `leading-normal`
+  - Reduce font sizes where appropriate
+
+## T2: Fix Model Response Rendering in Chat
+- **Status**: PENDING
+- **Issue**: Model responses not rendering in chat history
+- **Files**: `apps/web/components/ChatMessage.tsx`, `apps/web/lib/sse.ts`
+- **Changes**:
+  - Add `token` event handler to ChatMessage.tsx (accumulate streaming tokens)
+  - Ensure `text` events render with distinct styling (different bg from user messages)
+  - Verify SSE stream parsing handles both `event:` lines and `type` field in data JSON
+
+## T3: Redesign Sessions/History View (Left Sidebar)
+- **Status**: PENDING
+- **Issue**: Cluttered list with raw hashes, no hierarchy
+- **Files**: `apps/web/components/SessionManager.tsx`
+- **Changes**:
+  - Time-based grouping headers: "Today", "Yesterday", "Previous 7 Days"
+  - Auto-generate short titles from first prompt (first 40 chars)
+  - Clean active session highlight without overflow
+  - Show model name badge per session
+
+## T4: RAG Management Panel
+- **Status**: PENDING
+- **Issue**: No UI to manage RAG documents
+- **Files**: New `apps/web/components/RAGPanel.tsx`, modify `apps/web/app/ide/page.tsx`
+- **Changes**:
+  - New "KNOWLEDGE" tab in right sidebar (alongside CHAT | PIPELINE)
+  - Drag-and-drop file upload for PDFs, TXT, Markdown
+  - Document list view with enable/disable toggles
+  - Hook into existing `/api/rag/ingest` and `/api/rag/query` endpoints
+  - Backend: `/api/rag/documents` endpoint to list ingested docs
+
+## Execution Order
+```
+T2 (fix response rendering) → T1 (compact chat) → T3 (session redesign) → T4 (RAG panel)
+```

@@ -17,6 +17,7 @@ from apps.agent_runtime.llm_client import LLMClient
 from apps.agent_runtime.session import (
     add_message,
     create_session,
+    upsert_session,
 )
 from apps.agent_runtime.state_machine import AgentStateMachine
 from apps.gateway.config import settings
@@ -40,6 +41,7 @@ class AgentStreamRequest(BaseModel):
     session_id: str | None = None
     model: str | None = None
     max_iterations: int = 15
+    images: list[str] | None = None
 
 
 def _get_llm_client() -> LLMClient:
@@ -52,7 +54,9 @@ async def orchestrator_chat(req: ChatRequest):
     model = req.model or settings.default_model
     session_id = req.session_id
 
-    if not session_id:
+    if session_id:
+        await upsert_session(settings.postgres_url, session_id, kind="chat")
+    else:
         session = await create_session(settings.postgres_url, kind="chat")
         session_id = str(session["id"])
 
@@ -121,7 +125,9 @@ async def agent_code_stream(req: AgentStreamRequest):
     model = req.model or settings.default_model
     session_id = req.session_id
 
-    if not session_id:
+    if session_id:
+        await upsert_session(settings.postgres_url, session_id, kind="agentic")
+    else:
         session = await create_session(settings.postgres_url, kind="agentic")
         session_id = str(session["id"])
 
@@ -147,6 +153,7 @@ async def agent_code_stream(req: AgentStreamRequest):
         database_url=settings.postgres_url,
         max_iterations=req.max_iterations,
         rag_context=rag_context,
+        images=req.images,
     )
 
     async def event_generator():
@@ -278,3 +285,63 @@ async def multi_agent_stream(req: MultiAgentRequest):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
     )
+
+
+@router.get("/sessions")
+async def list_sessions(limit: int = 50):
+    """List recent sessions from Postgres."""
+    import asyncpg
+    try:
+        conn = await asyncpg.connect(settings.postgres_url)
+        rows = await conn.fetch(
+            """SELECT id, kind, status, created_at, updated_at
+               FROM sessions ORDER BY updated_at DESC LIMIT $1""",
+            limit,
+        )
+        await conn.close()
+        return {"sessions": [dict(r) for r in rows]}
+    except Exception as e:
+        logger.warning(f"Failed to list sessions: {e}")
+        return {"sessions": []}
+
+
+@router.get("/sessions/{session_id}/messages")
+async def get_session_messages(session_id: str, limit: int = 100):
+    """Get messages for a session."""
+    import asyncpg
+    try:
+        conn = await asyncpg.connect(settings.postgres_url)
+        rows = await conn.fetch(
+            """SELECT role, content, created_at
+               FROM messages WHERE session_id = $1
+               ORDER BY created_at ASC LIMIT $2""",
+            session_id,
+            limit,
+        )
+        await conn.close()
+        return {"messages": [dict(r) for r in rows]}
+    except Exception as e:
+        logger.warning(f"Failed to get messages: {e}")
+        return {"messages": []}
+
+
+@router.get("/workspace/browse")
+async def browse_workspace(path: str = "/"):
+    """Browse directories for workspace selection."""
+    if not os.path.isdir(path):
+        raise HTTPException(status_code=400, detail="Not a directory")
+    items = []
+    try:
+        for entry in sorted(os.scandir(path), key=lambda e: (not e.is_dir(), e.name.lower())):
+            if entry.name.startswith(".") and entry.name != ".git":
+                continue
+            if entry.name in ("node_modules", "__pycache__", ".git", "venv", ".venv"):
+                continue
+            items.append({
+                "name": entry.name,
+                "path": entry.path,
+                "isDir": entry.is_dir(),
+            })
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Permission denied")
+    return {"path": path, "items": items}

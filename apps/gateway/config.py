@@ -24,6 +24,7 @@ class Settings(BaseSettings):
 
     # Security
     api_key: str = ""
+    trust_proxy_headers: bool = False
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:3002"]
     max_body_size: int = 10 * 1024 * 1024  # 10MB
 
@@ -34,3 +35,11 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+if not settings.debug and "spark:spark@" in settings.postgres_url:
+    import logging
+    _logger = logging.getLogger(__name__)
+    _logger.warning(
+        "SPARK_POSTGRES_URL contains default 'spark:spark' credentials. "
+        "Change them before deploying to production."
+    )

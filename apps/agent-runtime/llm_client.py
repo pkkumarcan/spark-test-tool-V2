@@ -123,9 +123,23 @@ class LLMClient:
         temperature: float,
         stream: bool = False,
     ) -> dict:
+        # Strip images from non-vision models to prevent 400 errors
+        vision_models = {"llava", "llama3.2-vision", "minicpm-v", "gemma4"}
+        is_vision = any(vm in model.lower() for vm in vision_models)
+
+        cleaned_messages = []
+        for msg in messages:
+            cleaned = dict(msg)
+            if not is_vision and "images" in cleaned:
+                # Remove images for non-vision models
+                cleaned = {k: v for k, v in cleaned.items() if k != "images"}
+                if cleaned.get("content"):
+                    cleaned["content"] += "\n\n[Note: An image was attached but this model cannot process images.]"
+            cleaned_messages.append(cleaned)
+
         payload: dict = {
             "model": model,
-            "messages": messages,
+            "messages": cleaned_messages,
             "stream": stream,
             "options": {
                 "temperature": temperature,

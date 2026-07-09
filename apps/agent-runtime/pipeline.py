@@ -13,6 +13,33 @@ import httpx
 
 logger = logging.getLogger("spark.pipeline")
 
+# V3 Channel roster (10 channels)
+CHANNELS = {
+    "DFW": {"name": "Drift Wave", "niche": "Lofi Music", "tone": None, "voice_id": None},
+    "STM": {"name": "Still Mind", "niche": "Stoicism", "tone": "Calm, measured, quotable", "voice_id": "George"},
+    "ODA": {"name": "Odd Archive", "niche": "Mystery/History", "tone": 'Suspenseful, "I couldn\'t sleep after this"', "voice_id": "Adam"},
+    "PKP": {"name": "Peak Protocol", "niche": "Biohacking", "tone": "Protocol-driven, research-backed", "voice_id": None},
+    "DKS": {"name": "Dark Signal", "niche": "Dark Psychology", "tone": '"Exposé" style, calm but urgent', "voice_id": "Liam"},
+    "GDB": {"name": "Ground Brief", "niche": "Geopolitics+Macro", "tone": "Briefing style, authoritative", "voice_id": "Brian"},
+    "ISL": {"name": "Inner Scroll", "niche": "Vedic/Spiritual", "tone": "Reverent but accessible", "voice_id": "Freya"},
+    "NHZ": {"name": "Next Horizon", "niche": "Future Tech", "tone": 'Wonder-driven, "imagine this"', "voice_id": None},
+    "RMR": {"name": "Roam Rich", "niche": "Digital Nomad", "tone": "Conversational, practical", "voice_id": None},
+    "BWA": {"name": "Build With AI", "niche": "AI Tutorials", "tone": 'Tutorial-friendly, "let\'s build"', "voice_id": None},
+}
+
+VISUAL_STYLES = {
+    "DFW": "Anime cozy room, rain window, warm lighting, lofi aesthetic",
+    "STM": "Ancient Roman philosopher, marble columns, golden hour, muted earth tones",
+    "ODA": "Dark cinematic, archival footage aesthetic, dramatic shadows",
+    "PKP": "Clean clinical, data overlays, body/brain graphics",
+    "DKS": "Dark moody, silhouettes, dramatic lighting",
+    "GDB": "Maps, trade routes, satellite imagery, navy/gold",
+    "ISL": "Warm golds, temple imagery, sacred geometry",
+    "NHZ": "Dark space, neon accents, particle effects, 3D renders",
+    "RMR": "Destination landscape, cost comparison graphics",
+    "BWA": "Screen-share, terminal, architecture diagrams",
+}
+
 
 class PipelineStage(str, Enum):
     TOPIC = "topic"
@@ -70,18 +97,94 @@ class PipelineState:
         }
         self.updated_at = datetime.now(UTC).isoformat()
 
+    def _get_stage_info(self, stage_value: str) -> dict:
+        val = self.stages.get(stage_value, {})
+        if isinstance(val, dict):
+            return val
+        return {"status": str(val), "progress": 0, "msg": ""}
+
     def to_dict(self) -> dict:
+        stage_status = self._get_stage_info(self.stage.value).get("status", "pending")
+        if self.stage == PipelineStage.FAILED:
+            status = "failed"
+        elif self.stage == PipelineStage.COMPLETED:
+            status = "completed"
+        elif stage_status == "awaiting":
+            status = "pending_approval"
+        elif stage_status == "running":
+            status = "running"
+        else:
+            status = "pending"
+
+        stage_msg = self._get_stage_info(self.stage.value).get("msg", "")
+        current_step = f"{self.stage.value}: {stage_msg}" if stage_msg else self.stage.value
+
+        active_stages = [s for s in STAGE_ORDER if s not in (PipelineStage.FAILED, PipelineStage.COMPLETED)]
+        if self.stage == PipelineStage.COMPLETED:
+            progress_pct = 100
+        elif self.stage == PipelineStage.FAILED:
+            progress_pct = 0
+        else:
+            try:
+                idx = active_stages.index(self.stage)
+            except ValueError:
+                idx = 0
+            stage_progress = self._get_stage_info(self.stage.value).get("progress", 0)
+            progress_pct = int(((idx + stage_progress / 100) / len(active_stages)) * 100) if active_stages else 0
+
+        ch = CHANNELS.get(self.channel_id, {})
+        return {
+            "pipeline_id": self.pipeline_id,
+            "job_id": self.pipeline_id,
+            "job_code": self.pipeline_id,
+            "channel_id": self.channel_id,
+            "channel_name": ch.get("name", self.channel_id),
+            "topic": self.topic,
+            "status": status,
+            "current_step": current_step,
+            "progress_pct": progress_pct,
+            "stage": self.stage.value,
+            "stages": self.stages,
+            "data": {k: v for k, v in self.data.items() if k != "voice_files" and k != "keyframe_paths" and k != "upscaled_paths"},
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "error": self.error,
+        }
+
+    def to_db_dict(self) -> dict:
         return {
             "pipeline_id": self.pipeline_id,
             "channel_id": self.channel_id,
             "topic": self.topic,
             "stage": self.stage.value,
             "stages": self.stages,
-            "data": self.data,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
+            "data": {k: v for k, v in self.data.items() if k not in ("voice_files", "keyframe_paths", "upscaled_paths")},
+            "status": self._compute_status(),
             "error": self.error,
         }
+
+    def _compute_status(self) -> str:
+        stage_status = self._get_stage_info(self.stage.value).get("status", "pending")
+        if self.stage == PipelineStage.FAILED:
+            return "failed"
+        elif self.stage == PipelineStage.COMPLETED:
+            return "completed"
+        elif stage_status == "awaiting":
+            return "pending_approval"
+        elif stage_status == "running":
+            return "running"
+        return "pending"
+
+    @classmethod
+    def from_db_row(cls, row: dict) -> "PipelineState":
+        state = cls(row["pipeline_id"], row["channel_id"], row["topic"])
+        state.stage = PipelineStage(row["stage"])
+        state.stages = row.get("stages", {})
+        state.data = row.get("data", {})
+        state.created_at = row.get("created_at", state.created_at)
+        state.updated_at = row.get("updated_at", state.updated_at)
+        state.error = row.get("error")
+        return state
 
 
 class PipelineRunner:
@@ -95,6 +198,7 @@ class PipelineRunner:
         whisper_url: str = "http://whisper:9000",
         comfyui_url: str = "http://localhost:8188",
         output_dir: str = "/app/output",
+        database_url: str | None = None,
     ):
         self.state = state
         self.ollama_url = ollama_url
@@ -102,7 +206,21 @@ class PipelineRunner:
         self.whisper_url = whisper_url
         self.comfyui_url = comfyui_url
         self.output_dir = output_dir
+        self.database_url = database_url
         self.job_dir = os.path.join(output_dir, "jobs", state.pipeline_id)
+
+    async def _persist(self):
+        if self.database_url:
+            from apps.agent_runtime.session import db_update_pipeline
+            await db_update_pipeline(
+                self.database_url,
+                self.state.pipeline_id,
+                self.state.stage.value,
+                self.state.stages,
+                {k: v for k, v in self.state.data.items() if k not in ("voice_files", "keyframe_paths", "upscaled_paths")},
+                self.state._compute_status(),
+                self.state.error,
+            )
 
     async def run_stage(self, stage: PipelineStage):
         os.makedirs(self.job_dir, exist_ok=True)
@@ -126,10 +244,12 @@ class PipelineRunner:
                 await self._stage_qc()
             elif stage == PipelineStage.PUBLISH:
                 await self._stage_publish()
+            await self._persist()
         except Exception as e:
             self.state.error = str(e)
             self.state.set_stage(PipelineStage.FAILED, "failed", 0, f"Failed: {e}")
             logger.error(f"Pipeline {self.state.pipeline_id} failed at {stage.value}: {e}")
+            await self._persist()
             raise
 
     async def run_full(self):
@@ -184,12 +304,26 @@ class PipelineRunner:
 
     async def _stage_topic(self):
         self.state.set_stage(PipelineStage.TOPIC, "running", 20, "Generating topic brief...")
+        ch = CHANNELS.get(self.state.channel_id, {})
+        ch_name = ch.get("name", self.state.channel_id)
+        ch_niche = ch.get("niche", "general")
+
         system_prompt = (
-            "You are a content strategist. Generate a Phase 1 intelligence brief for a YouTube video. "
-            "Output a JSON object with: title_variants (list of 3 titles), thumbnail_concepts (list of 2 descriptions), "
-            "target_duration_seconds (number). Return ONLY the JSON."
+            f"You are a content strategist for the YouTube channel '{ch_name}' in the {ch_niche} niche.\n"
+            "Research trending topics and generate a Phase 1 intelligence brief.\n\n"
+            "Consider:\n"
+            "1. What are people searching for in this niche?\n"
+            "2. What topics have high interest but low YouTube competition?\n"
+            "3. What angle would resonate with this channel's audience?\n\n"
+            "Output a JSON object with:\n"
+            "- title_variants: list of 3 compelling video titles\n"
+            "- thumbnail_concepts: list of 2 visual concepts for thumbnails\n"
+            "- target_duration_seconds: recommended video length\n"
+            "- keyword: primary SEO keyword\n"
+            "- hook_angle: the core hook/angle for this video\n\n"
+            "Return ONLY the JSON."
         )
-        user_prompt = f"Topic: {self.state.topic}\nChannel: {self.state.channel_id}"
+        user_prompt = f"Topic idea: {self.state.topic}\nChannel: {ch_name} ({ch_niche})"
 
         try:
             raw = await self._query_ollama(system_prompt, user_prompt)
@@ -199,7 +333,7 @@ class PipelineRunner:
             brief = {
                 "title_variants": [
                     f"Inside the {self.state.topic} War",
-                    f"Why {self.state.topic} is Changing Finance",
+                    f"Why {self.state.topic} is Changing {ch_niche}",
                     f"The Rise of {self.state.topic}",
                 ],
                 "thumbnail_concepts": [
@@ -207,6 +341,8 @@ class PipelineRunner:
                     "Professional documentary-style scene",
                 ],
                 "target_duration_seconds": 120,
+                "keyword": self.state.topic.lower(),
+                "hook_angle": f"Exploring the hidden truth about {self.state.topic}",
             }
 
         self.state.data["brief"] = brief
@@ -218,14 +354,30 @@ class PipelineRunner:
         titles = brief.get("title_variants", [])
         title = titles[0] if titles else self.state.topic
 
+        ch = CHANNELS.get(self.state.channel_id, {})
+        ch_name = ch.get("name", self.state.channel_id)
+        ch_niche = ch.get("niche", "general")
+        ch_tone = ch.get("tone", "engaging, informative")
+
         system_prompt = (
-            "You are a scriptwriter. Generate a narrator-led script with sections HOOK, INTRO, BODY, CTA. "
-            "Output a JSON object with: mode ('narrator-led'), sections (list of objects with section_id, label, narration, target_duration_seconds). "
+            f"You are a YouTube scriptwriter for '{ch_name}'.\n"
+            f"Niche: {ch_niche}\n"
+            f"Tone: {ch_tone}\n\n"
+            "Write a narrator-led script with sections HOOK, INTRO, BODY, CTA.\n\n"
+            "Structure:\n"
+            "- HOOK (0-30s): Open loop, personal stakes, curiosity gap\n"
+            "- INTRO (30-60s): Channel branding, topic context\n"
+            "- BODY (4-6 points): Core content with transitions\n"
+            "- CTA (final 30s): Subscribe, next video tease\n\n"
+            "Output a JSON object with:\n"
+            "- mode: 'narrator-led'\n"
+            "- sections: list of objects with section_id, label, narration, target_duration_seconds\n\n"
+            "The narration should be written for voiceover (what the narrator says aloud).\n"
             "Return ONLY the JSON."
         )
 
         try:
-            raw = await self._query_ollama(system_prompt, f"Title: {title}")
+            raw = await self._query_ollama(system_prompt, f"Title: {title}\nTopic: {self.state.topic}")
             script = json.loads(self._clean_json(raw))
         except Exception as e:
             logger.warning(f"Script generation failed, using mock: {e}")
@@ -233,8 +385,8 @@ class PipelineRunner:
                 "mode": "narrator-led",
                 "sections": [
                     {"section_id": "S01", "label": "HOOK", "narration": f"By the end of this video, you will understand why {self.state.topic} matters.", "target_duration_seconds": 15},
-                    {"section_id": "S02", "label": "INTRO", "narration": f"Welcome. Today we explore {self.state.topic}.", "target_duration_seconds": 15},
-                    {"section_id": "S03", "label": "BODY", "narration": f"The world of {self.state.topic} is evolving rapidly, reshaping industries worldwide.", "target_duration_seconds": 30},
+                    {"section_id": "S02", "label": "INTRO", "narration": f"Welcome to {ch_name}. Today we explore {self.state.topic}.", "target_duration_seconds": 15},
+                    {"section_id": "S03", "label": "BODY", "narration": f"The world of {self.state.topic} is evolving rapidly, reshaping {ch_niche} worldwide.", "target_duration_seconds": 30},
                     {"section_id": "S04", "label": "CTA", "narration": "If you found this valuable, subscribe and hit the bell.", "target_duration_seconds": 10},
                 ],
             }
@@ -252,6 +404,9 @@ class PipelineRunner:
         script = self.state.data.get("script", {})
         sections = script.get("sections", [])
 
+        ch = CHANNELS.get(self.state.channel_id, {})
+        voice_id = ch.get("voice_id")
+
         voice_dir = os.path.join(self.job_dir, "audio", "voice")
         os.makedirs(voice_dir, exist_ok=True)
 
@@ -263,19 +418,34 @@ class PipelineRunner:
             self.state.set_stage(PipelineStage.VOICEOVER, "running", pct, f"Synthesizing {sec_id}...")
 
             wav_path = os.path.join(voice_dir, f"{sec_id}.wav")
-            try:
-                async with httpx.AsyncClient(timeout=120.0) as client:
-                    r = await client.post(
-                        f"{self.f5_tts_url}/synthesize",
-                        json={"text": narration, "voice": "default", "speed": 1.0},
-                    )
-                    if r.status_code == 200:
-                        with open(wav_path, "wb") as f:
-                            f.write(r.content)
-                    else:
-                        raise RuntimeError(f"F5-TTS returned {r.status_code}")
-            except Exception as e:
-                logger.warning(f"F5-TTS failed for {sec_id}: {e}, using silence")
+            tts_ok = False
+
+            # Try ElevenLabs first if voice is assigned
+            if voice_id and os.getenv("ELEVENLABS_API_KEY"):
+                try:
+                    tts_ok = await self._tts_elevenlabs(narration, voice_id, wav_path)
+                except Exception as e:
+                    logger.warning(f"ElevenLabs failed for {sec_id}: {e}")
+
+            # Fallback to F5-TTS
+            if not tts_ok:
+                try:
+                    async with httpx.AsyncClient(timeout=120.0) as client:
+                        r = await client.post(
+                            f"{self.f5_tts_url}/synthesize",
+                            json={"text": narration, "voice": "default", "speed": 1.0},
+                        )
+                        if r.status_code == 200:
+                            with open(wav_path, "wb") as f:
+                                f.write(r.content)
+                            tts_ok = True
+                        else:
+                            raise RuntimeError(f"F5-TTS returned {r.status_code}")
+                except Exception as e:
+                    logger.warning(f"F5-TTS failed for {sec_id}: {e}")
+
+            # Fallback to silence
+            if not tts_ok:
                 cmd = [
                     "ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono",
                     "-t", str(sec.get("target_duration_seconds", 15)), wav_path,
@@ -290,10 +460,33 @@ class PipelineRunner:
         self.state.data["voice_files"] = voice_files
         self.state.set_stage(PipelineStage.VOICEOVER, "passed", 100, f"Generated {len(voice_files)} voice tracks")
 
+    async def _tts_elevenlabs(self, text: str, voice_id: str, output_path: str) -> bool:
+        api_key = os.getenv("ELEVENLABS_API_KEY")
+        if not api_key:
+            return False
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
+                headers={"xi-api-key": api_key},
+                json={
+                    "text": text,
+                    "model_id": "eleven_monolingual_v1",
+                    "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
+                },
+            )
+            if resp.status_code == 200:
+                with open(output_path, "wb") as f:
+                    f.write(resp.content)
+                return True
+            return False
+
     async def _stage_visuals(self):
         self.state.set_stage(PipelineStage.VISUALS, "running", 10, "Generating keyframes...")
         script = self.state.data.get("script", {})
         sections = script.get("sections", [])
+
+        ch = CHANNELS.get(self.state.channel_id, {})
+        visual_style = VISUAL_STYLES.get(self.state.channel_id, "Cinematic documentary scene, professional lighting, 16:9")
 
         visuals_dir = os.path.join(self.job_dir, "visuals")
         keyframes_dir = os.path.join(visuals_dir, "keyframes")
@@ -303,7 +496,7 @@ class PipelineRunner:
         for i, sec in enumerate(sections):
             sec_id = sec.get("section_id", f"S{i:02d}")
             narration = sec.get("narration", "")
-            prompt = f"Cinematic documentary scene: {narration[:150]}. Professional lighting, 16:9."
+            prompt = f"{visual_style}: {narration[:150]}. Professional quality."
             pct = 10 + int(80 * (i / max(len(sections), 1)))
             self.state.set_stage(PipelineStage.VISUALS, "running", pct, f"Keyframe {sec_id}...")
 
@@ -397,19 +590,92 @@ class PipelineRunner:
         self.state.set_stage(PipelineStage.UPSCALE, "passed", 100, f"Upscaled {len(upscaled_paths)} assets")
 
     async def _stage_stitch(self):
-        self.state.set_stage(PipelineStage.STITCH, "running", 50, "Stitching timeline...")
+        self.state.set_stage(PipelineStage.STITCH, "running", 10, "Assembling video...")
+        script = self.state.data.get("script", {})
+        sections = script.get("sections", [])
+        voice_files = self.state.data.get("voice_files", [])
+        keyframe_paths = self.state.data.get("keyframe_paths", self.state.data.get("upscaled_paths", {}))
+
         final_dir = os.path.join(self.job_dir, "final")
         os.makedirs(final_dir, exist_ok=True)
+        segments_dir = os.path.join(final_dir, "segments")
+        os.makedirs(segments_dir, exist_ok=True)
 
         video_final = os.path.join(final_dir, "video_final.mp4")
-        cmd = [
-            "ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=#1a1a2e:s=1920x1080:d=60",
-            "-c:v", "libx264", "-pix_fmt", "yuv420p", video_final,
-        ]
-        proc = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
-        )
-        await asyncio.wait_for(proc.communicate(), timeout=180)
+
+        if not sections or not voice_files:
+            cmd = [
+                "ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=#1a1a2e:s=1920x1080:d=60",
+                "-c:v", "libx264", "-pix_fmt", "yuv420p", video_final,
+            ]
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+            )
+            await asyncio.wait_for(proc.communicate(), timeout=180)
+        else:
+            segment_files = []
+            for i, sec in enumerate(sections):
+                sec_id = sec.get("section_id", f"S{i:02d}")
+                voice_path = voice_files[i] if i < len(voice_files) else None
+                kf_path = keyframe_paths.get(sec_id)
+
+                segment_path = os.path.join(segments_dir, f"{sec_id}.mp4")
+
+                if voice_path and os.path.exists(voice_path) and kf_path and os.path.exists(kf_path):
+                    cmd = [
+                        "ffmpeg", "-y", "-loop", "1", "-i", kf_path, "-i", voice_path,
+                        "-c:v", "libx264", "-tune", "stillimage", "-c:a", "aac", "-b:a", "192k",
+                        "-vf", "zoompan=z='min(zoom+0.001,1.1)':d=450:s=1920x1080",
+                        "-pix_fmt", "yuv420p", "-shortest", segment_path,
+                    ]
+                elif kf_path and os.path.exists(kf_path):
+                    duration = sec.get("target_duration_seconds", 15)
+                    cmd = [
+                        "ffmpeg", "-y", "-loop", "1", "-i", kf_path,
+                        "-c:v", "libx264", "-tune", "stillimage",
+                        "-vf", f"zoompan=z='min(zoom+0.001,1.1)':d={duration * 25}:s=1920x1080",
+                        "-pix_fmt", "yuv420p", "-t", str(duration), segment_path,
+                    ]
+                else:
+                    duration = sec.get("target_duration_seconds", 15)
+                    cmd = [
+                        "ffmpeg", "-y", "-f", "lavfi", "-i", f"color=c=#1a1a2e:s=1920x1080:d={duration}",
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p", segment_path,
+                    ]
+
+                pct = 10 + int(80 * (i / max(len(sections), 1)))
+                self.state.set_stage(PipelineStage.STITCH, "running", pct, f"Assembling {sec_id}...")
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                )
+                await asyncio.wait_for(proc.communicate(), timeout=300)
+
+                if os.path.exists(segment_path):
+                    segment_files.append(segment_path)
+
+            if segment_files:
+                concat_list = os.path.join(segments_dir, "concat.txt")
+                with open(concat_list, "w") as f:
+                    for sf in segment_files:
+                        f.write(f"file '{sf}'\n")
+
+                cmd = [
+                    "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list,
+                    "-c", "copy", video_final,
+                ]
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                )
+                await asyncio.wait_for(proc.communicate(), timeout=300)
+            else:
+                cmd = [
+                    "ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=#1a1a2e:s=1920x1080:d=60",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", video_final,
+                ]
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                )
+                await asyncio.wait_for(proc.communicate(), timeout=180)
 
         self.state.data["video_final"] = video_final
         self.state.set_stage(PipelineStage.STITCH, "passed", 100, "Timeline stitched")
@@ -436,16 +702,45 @@ class PipelineRunner:
         titles = brief.get("title_variants", [])
         title = titles[0] if titles else self.state.topic
 
-        from apps.media_workers.publishing import generate_metadata, upload_video
-        metadata = await generate_metadata(title, f"Auto-generated video about {self.state.topic}", [self.state.topic])
-        upload_result = await upload_video(video_final, metadata)
+        ch = CHANNELS.get(self.state.channel_id, {})
+        ch_name = ch.get("name", self.state.channel_id)
+
+        from apps.agent_runtime.thumbnail import generate_thumbnail, generate_metadata
+        thumbnail_path = os.path.join(self.job_dir, "final", "thumbnail.png")
+        visual_style = VISUAL_STYLES.get(self.state.channel_id, "Cinematic documentary scene")
+        try:
+            await generate_thumbnail(
+                f"{visual_style}: {title}. YouTube thumbnail, bold, dramatic.",
+                thumbnail_path,
+                title_text=title,
+                comfyui_url=self.comfyui_url,
+            )
+        except Exception as e:
+            logger.warning(f"Thumbnail generation failed: {e}")
+
+        from apps.agent_runtime.youtube_publish import upload_video
+        metadata = await generate_metadata(
+            title,
+            f"Auto-generated video about {self.state.topic}",
+            [self.state.topic, ch_name, *self.state.topic.split()[:3]],
+            channel_name=ch_name,
+            topic=self.state.topic,
+        )
+        upload_result = await upload_video(video_final, metadata, thumbnail_path=thumbnail_path)
 
         self.state.data["publish_result"] = upload_result
+        self.state.data["thumbnail"] = thumbnail_path
         self.state.set_stage(PipelineStage.PUBLISH, "passed", 100, f"Published: {upload_result.get('video_id', 'N/A')}")
         self.state.set_stage(PipelineStage.COMPLETED, "passed", 100, "Pipeline complete")
 
 
 _pipelines: dict[str, PipelineState] = {}
+_database_url: str | None = None
+
+
+def set_database_url(url: str):
+    global _database_url
+    _database_url = url
 
 
 def create_pipeline(channel_id: str, topic: str) -> PipelineState:
@@ -461,3 +756,48 @@ def get_pipeline(pipeline_id: str) -> PipelineState | None:
 
 def list_pipelines() -> list[dict]:
     return [p.to_dict() for p in _pipelines.values()]
+
+
+async def async_create_pipeline(channel_id: str, topic: str) -> PipelineState:
+    state = create_pipeline(channel_id, topic)
+    if _database_url:
+        from apps.agent_runtime.session import db_create_pipeline
+        await db_create_pipeline(
+            _database_url,
+            state.pipeline_id,
+            channel_id,
+            topic,
+            state.stages,
+        )
+    return state
+
+
+async def async_get_pipeline(pipeline_id: str) -> PipelineState | None:
+    state = get_pipeline(pipeline_id)
+    if state:
+        return state
+    if _database_url:
+        from apps.agent_runtime.session import db_get_pipeline
+        row = await db_get_pipeline(_database_url, pipeline_id)
+        if row:
+            state = PipelineState.from_db_row(row)
+            _pipelines[pipeline_id] = state
+            return state
+    return None
+
+
+async def async_list_pipelines() -> list[dict]:
+    if _database_url:
+        from apps.agent_runtime.session import db_list_pipelines
+        rows = await db_list_pipelines(_database_url)
+        result = []
+        for row in rows:
+            pid = row["pipeline_id"]
+            if pid in _pipelines:
+                result.append(_pipelines[pid].to_dict())
+            else:
+                state = PipelineState.from_db_row(row)
+                _pipelines[pid] = state
+                result.append(state.to_dict())
+        return result
+    return list_pipelines()

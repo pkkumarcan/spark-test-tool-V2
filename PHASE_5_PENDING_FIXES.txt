@@ -1,0 +1,41 @@
+# Phase 5: Pending Fixes + Docker Rebuild
+
+## T1: Verify all pending items from last session are wired + rebuild Docker
+
+### T1.1: Verify MemoryEditor is wired into IDE page
+- **Status**: DONE (verified in code)
+- **Evidence**: `apps/web/app/ide/page.tsx` line 12 imports MemoryEditor, line 79 manages open state, lines 367-375 render button in sidebar, line 883 renders modal
+
+### T1.2: Verify SessionManager is wired into IDE page
+- **Status**: DONE (verified in code)
+- **Evidence**: `apps/web/app/ide/page.tsx` line 7 imports SessionManager, line 364 renders when `sidebarTab === 'sessions'`, line 111-117 loads archived sessions from `/api/orchestrator/sessions`
+
+### T1.3: Verify chat panel has scroll
+- **Status**: DONE (verified in code)
+- **Evidence**: `apps/web/app/ide/page.tsx` line 656 has `overflow-y-auto` on chat scroll container
+
+### T1.4: Verify FileTree context menu has all 5 items
+- **Status**: DONE (verified in code, but containers running stale image)
+- **Evidence**: `apps/web/components/FileTree.tsx` lines 250-291 render context menu with: New File, New Folder, Copy Path, Copy for Agent, Delete
+- **Issue**: Context menu items 3-5 only show when `contextMenu.entry` is not null (line 267). If right-clicking background (entry=null), only New File + New Folder show. This is correct behavior.
+- **Root cause of user issue**: Docker containers were rebuilt from old image. Need `--build` flag.
+
+### T1.5: Rebuild Docker containers with fresh code
+- **Status**: PENDING
+- **Action**: `docker compose -f infra/docker-compose.yml up -d --build gateway web`
+- **Verify**: Right-click any file in FileTree → should see all 5 options (New File, New Folder, Copy Path, Copy for Agent, Delete)
+
+---
+
+## Execution Order
+
+```
+T1.1-T1.4 (verification) → T1.5 (rebuild) → manual test
+```
+
+## Key Notes
+
+- All code changes from last session (ses_0c0187624ffe) are already committed to the codebase
+- Docker containers exited 48 min ago (exit 255) and were restarted without `--build`
+- The running containers have stale code that doesn't include the context menu fixes
+- `docker compose up -d --build` will rebuild images from current source

@@ -27,3 +27,9 @@ out/
 # OS
 .DS_Store
 Thumbs.db
+
+# Spark Media Factory V2 custom ignores
+model-cache/
+output/
+temp_render.html
+

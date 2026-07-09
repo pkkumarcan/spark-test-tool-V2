@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { gatewayUrl } from '@/lib/api';
 
 interface MonacoEditorProps {
   file: string | null;
@@ -23,6 +24,8 @@ function getLanguage(filePath: string): string {
   const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
   return LANG_MAP[ext] ?? 'plaintext';
 }
+
+const EMPTY_VALUE = '// No file open — select one from the explorer\n// or ask Spark to create one';
 
 export function MonacoEditor({ file }: MonacoEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -56,20 +59,22 @@ export function MonacoEditor({ file }: MonacoEditorProps) {
         });
 
         editorRef.current = monaco.editor.create(containerRef.current!, {
-          value: '// Select a file to view',
+          value: EMPTY_VALUE,
           language: 'plaintext',
           theme: 'spark-dark',
           fontFamily: "'JetBrains Mono', monospace",
           fontSize: 13,
           minimap: { enabled: false },
           automaticLayout: true,
-          readOnly: false,
+          readOnly: true,
           scrollBeyondLastLine: false,
           wordWrap: 'on',
           padding: { top: 12 },
           renderLineHighlight: 'all',
           cursorBlinking: 'smooth',
           smoothScrolling: true,
+          domReadOnly: true,
+          contextmenu: false,
         });
       });
     };
@@ -81,9 +86,19 @@ export function MonacoEditor({ file }: MonacoEditorProps) {
   }, []);
 
   useEffect(() => {
-    if (!file || !editorRef.current || !monacoRef.current) return;
+    if (!editorRef.current || !monacoRef.current) return;
 
-    fetch(`/api/ide/file?path=${encodeURIComponent(file)}`)
+    if (!file) {
+      editorRef.current.setModel(
+        monacoRef.current.editor.createModel(EMPTY_VALUE, 'plaintext')
+      );
+      editorRef.current.updateOptions({ readOnly: true });
+      return;
+    }
+
+    editorRef.current.updateOptions({ readOnly: false });
+
+    fetch(gatewayUrl(`/api/ide/file?path=${encodeURIComponent(file)}`))
       .then((r) => r.json())
       .then((data) => {
         if (data.status === 'ok') {

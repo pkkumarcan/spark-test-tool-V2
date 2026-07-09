@@ -16,7 +16,7 @@ ALLOWED_COMMANDS = {
     "cargo", "rustc", "go",
     "ls", "cat", "echo", "head", "tail", "wc", "find", "grep", "sed", "awk",
     "sort", "uniq", "diff", "tee", "xargs", "mkdir", "cp", "mv", "touch", "cd",
-    "git", "docker", "docker-compose",
+    "git",
     "which", "env", "date", "uname",
 }
 
@@ -28,7 +28,13 @@ _BLOCKED_PATTERNS = [
 
 
 def _audit_command(command: str) -> dict:
-    """Analyze shell command for security violations."""
+    """Analyze shell command for security violations.
+
+    NOTE: This is a defense-in-depth layer. True network isolation for
+    interpreters (python, node) is enforced at the container level
+    (--network=none), not by string matching. See ADR-004 and the
+    sandbox threat model doc.
+    """
     violations = []
     rules = [
         (r"curl\s+.*\|\s*bash", "Piping curl directly to bash"),
@@ -37,6 +43,8 @@ def _audit_command(command: str) -> dict:
         (r"/etc/passwd", "Unauthorized system password database read"),
         (r"/etc/shadow", "Unauthorized system credential read"),
         (r"curl\s+.*http://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+", "Direct external IP connection bypass attempt"),
+        (r"python[0-9.]*\s+-c\s+.*(socket|urllib|requests)", "Inline interpreter network call"),
+        (r"\$\(.*\)|`.*`", "Command substitution attempt"),
     ]
     for regex, reason in rules:
         if re.search(regex, command, re.IGNORECASE):

@@ -168,10 +168,40 @@ See [docs/V1_TO_V2_MIGRATION.md](docs/V1_TO_V2_MIGRATION.md) for:
 
 ## Documentation
 
-- [API Reference](docs/API_REFERENCE.md)
-- [V1 to V2 Migration](docs/V1_TO_V2_MIGRATION.md)
+### Manual (Comprehensive Operations Guide)
+- [Manual Index](docs/manual/INDEX.md) — Master index of all 23 chapters
+- [X00 Pipeline Architecture](docs/manual/X00_pipeline_architecture.md) — Content pipeline design
+- [X01 Orientation](docs/manual/X01_orientation.md) — Quickstart guide
+- [X02 System Architecture](docs/manual/X02_system_architecture.md) — Component design
+- [X03 Hardware Requirements](docs/manual/X03_hardware.md) — GPU, CPU, RAM needs
+- [X05 Model Registry](docs/manual/X05_model_registry.md) — LLM models
+- [X06 Installation Guide](docs/manual/X06_install.md) — Step-by-step setup
+- [X07 Operations Runbook](docs/manual/X07_operations_runbook.md) — Day-to-day ops
+- [X08 Smoke Tests](docs/manual/X08_smoke_tests.md) — Test suite
+- [X09 Logging & Observability](docs/manual/X09_logging.md) — Debugging
+- [X10 Reliability](docs/manual/X10_reliability.md) — Failure handling
+- [X11 Research Workflow](docs/manual/X11_research.md) — Content research
+- [X12 RAG & Knowledge Base](docs/manual/X12_rag.md) — Semantic search
+- [X21 STT (Whisper)](docs/manual/X21_stt.md) — Speech-to-text
+- [X22 TTS (F5-TTS)](docs/manual/X22_tts.md) — Text-to-speech
+- [X41 ComfyUI Integration](docs/manual/X41_comfyui.md) — Image/video generation
+- [X42 Image Generation](docs/manual/X42_image_gen.md) — Keyframe generation
+- [X51 Video Generation](docs/manual/X51_video.md) — Video assembly
+- [X65 FFmpeg Cookbook](docs/manual/X65_ffmpeg.md) — FFmpeg commands
+- [X71 Channel Setup](docs/manual/X71_channels.md) — 12 channels & publishing
+- [X92 Security](docs/manual/X92_security.md) — Security model
+- [X96 Costing & ROI](docs/manual/X96_costing.md) — Revenue projections
+- [X98 Incident Response](docs/manual/X98_incidents.md) — Troubleshooting
+- [Channels Reference](docs/CHANNELS_REFERENCE.md) — All 12 channels detailed
+
+### Architecture Decision Records
 - [ADR-001: Postgres Over SQLite](docs/adr/001-postgres-over-sqlite.md)
 - [ADR-002: Native Tool-Calling](docs/adr/002-native-tool-calling.md)
 - [ADR-003: Procrastinate Job Queue](docs/adr/003-procrastinate-job-queue.md)
 - [ADR-004: Docker Sandbox](docs/adr/004-docker-sandbox.md)
 - [ADR-005: Next.js Frontend](docs/adr/005-nextjs-frontend.md)
+- [ADR-006: Sandbox Threat Model](docs/adr/006-sandbox-threat-model.md)
+
+### Other
+- [API Reference](docs/API_REFERENCE.md)
+- [V1 to V2 Migration](docs/V1_TO_V2_MIGRATION.md)

@@ -79,6 +79,27 @@ async def create_session(
         return dict(row)
 
 
+async def upsert_session(
+    database_url: str,
+    session_id: str,
+    kind: str = "chat",
+    user_id: str = "default",
+) -> dict:
+    """Create a session with a specific ID, or return the existing one."""
+    pool = await get_pool(database_url)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO sessions (id, user_id, kind)
+               VALUES ($1, $2, $3)
+               ON CONFLICT (id) DO UPDATE SET updated_at = now()
+               RETURNING id, user_id, kind, status, created_at, updated_at""",
+            uuid.UUID(session_id),
+            user_id,
+            kind,
+        )
+        return dict(row)
+
+
 async def add_message(
     database_url: str,
     session_id: str,
@@ -165,4 +186,92 @@ async def update_tool_call_status(
             status,
             json.dumps(result) if result else None,
             uuid.UUID(tool_call_id),
+        )
+
+
+# ── Pipeline persistence ─────────────────────────────────────────────────────
+
+
+async def init_pipeline_table(database_url: str) -> None:
+    pool = await get_pool(database_url)
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS pipelines (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                pipeline_id TEXT NOT NULL UNIQUE,
+                channel_id TEXT NOT NULL,
+                topic TEXT NOT NULL,
+                stage TEXT NOT NULL DEFAULT 'topic',
+                stages JSONB NOT NULL DEFAULT '{}',
+                data JSONB NOT NULL DEFAULT '{}',
+                status TEXT NOT NULL DEFAULT 'pending',
+                error TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            CREATE INDEX IF NOT EXISTS idx_pipelines_pipeline_id ON pipelines(pipeline_id);
+            CREATE INDEX IF NOT EXISTS idx_pipelines_status ON pipelines(status);
+        """)
+
+
+async def db_create_pipeline(
+    database_url: str,
+    pipeline_id: str,
+    channel_id: str,
+    topic: str,
+    stages: dict,
+) -> dict:
+    pool = await get_pool(database_url)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO pipelines (pipeline_id, channel_id, topic, stages, status)
+               VALUES ($1, $2, $3, $4, 'pending')
+               RETURNING pipeline_id, channel_id, topic, stage, stages, data, status, error, created_at, updated_at""",
+            pipeline_id,
+            channel_id,
+            topic,
+            json.dumps(stages),
+        )
+        return dict(row)
+
+
+async def db_get_pipeline(database_url: str, pipeline_id: str) -> dict | None:
+    pool = await get_pool(database_url)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT pipeline_id, channel_id, topic, stage, stages, data, status, error, created_at, updated_at FROM pipelines WHERE pipeline_id = $1",
+            pipeline_id,
+        )
+        return dict(row) if row else None
+
+
+async def db_list_pipelines(database_url: str) -> list[dict]:
+    pool = await get_pool(database_url)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT pipeline_id, channel_id, topic, stage, stages, data, status, error, created_at, updated_at FROM pipelines ORDER BY created_at DESC"
+        )
+        return [dict(r) for r in rows]
+
+
+async def db_update_pipeline(
+    database_url: str,
+    pipeline_id: str,
+    stage: str,
+    stages: dict,
+    data: dict,
+    status: str,
+    error: str | None = None,
+) -> None:
+    pool = await get_pool(database_url)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """UPDATE pipelines SET stage = $1, stages = $2, data = $3, status = $4, error = $5, updated_at = now()
+               WHERE pipeline_id = $6""",
+            stage,
+            json.dumps(stages),
+            json.dumps(data),
+            status,
+            error,
+            pipeline_id,
         )
